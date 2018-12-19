@@ -245,13 +245,13 @@ set @resources='
   <LocaleResource Name="Admin.Catalog.Products.Fields.LowStockActivity.Hint">
     <Value>Action to be taken when your current stock quantity falls below (reaches) the ''Minimum stock quantity''. Activation of the action will occur only after an order is placed.</Value>
   </LocaleResource>
-  <LocaleResource Name="Admin.Configuration.Plugins.ApplayChanges">
+  <LocaleResource Name="Admin.Configuration.Plugins.ApplyChanges">
     <Value>Restart application to apply changes</Value>
   </LocaleResource>
   <LocaleResource Name="Admin.Configuration.Plugins.DiscardChanges">
     <Value>Discard changes</Value>
   </LocaleResource>  
-  <LocaleResource Name="Admin.Configuration.Plugins.ApplayChanges.Progress">
+  <LocaleResource Name="Admin.Configuration.Plugins.ApplyChanges.Progress">
     <Value>Applying changes on plugins...</Value>
   </LocaleResource>    
   <LocaleResource Name="Admin.Configuration.Plugins.DiscardChanges.Progress">
@@ -269,7 +269,7 @@ set @resources='
   <LocaleResource Name="ActivityLog.NotDeletedPluginError">
     <Value>The plugin "{0}" not deleted</Value>
   </LocaleResource> 
-  <LocaleResource Name="Admin.System.Warnings.PluginrRquiredAssembly">
+  <LocaleResource Name="Admin.System.Warnings.PluginRequiredAssembly">
     <Value>the ''{0}'' plugin required the ''{1}'' assembly</Value>
   </LocaleResource>  
   <LocaleResource Name="Admin.System.Warnings.AssemblyHasCollision">
