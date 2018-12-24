@@ -260,15 +260,15 @@ set @resources='
   <LocaleResource Name="Admin.Configuration.Plugins.ChangesApplyAfterReboot">
     <Value>Changes will be apply after restart application</Value>
   </LocaleResource> 
-  <LocaleResource Name="ActivityLog.NotUninstalledPluginError">
-    <Value>The plugin "{0}" not uninstalled</Value>
-  </LocaleResource> 
-  <LocaleResource Name="ActivityLog.NotInstalledNewPluginError">
-    <Value>The plugin "{0}" not installed</Value>
-  </LocaleResource>   
-  <LocaleResource Name="ActivityLog.NotDeletedPluginError">
+  <LocaleResource Name="Admin.Plugins.Errors.NotDeleted">
     <Value>The plugin "{0}" not deleted</Value>
   </LocaleResource> 
+  <LocaleResource Name="Admin.Plugins.Errors.NotInstalled">
+    <Value>The plugin "{0}" not installed</Value>
+  </LocaleResource>  
+  <LocaleResource Name="Admin.Plugins.Errors.NotUninstalled">
+    <Value>The plugin "{0}" not uninstalled</Value>
+  </LocaleResource>
   <LocaleResource Name="Admin.System.Warnings.PluginRequiredAssembly">
     <Value>the ''{0}'' plugin required the ''{1}'' assembly</Value>
   </LocaleResource>  
