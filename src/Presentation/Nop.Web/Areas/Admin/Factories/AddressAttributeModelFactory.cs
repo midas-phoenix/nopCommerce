@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Common;
 using Nop.Services.Common;
 using Nop.Services.Localization;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Common;
-using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Factories;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -33,10 +34,10 @@ namespace Nop.Web.Areas.Admin.Factories
             ILocalizationService localizationService,
             ILocalizedModelFactory localizedModelFactory)
         {
-            this._addressAttributeParser = addressAttributeParser;
-            this._addressAttributeService = addressAttributeService;
-            this._localizationService = localizationService;
-            this._localizedModelFactory = localizedModelFactory;
+            _addressAttributeParser = addressAttributeParser;
+            _addressAttributeService = addressAttributeService;
+            _localizationService = localizationService;
+            _localizedModelFactory = localizedModelFactory;
         }
 
         #endregion
@@ -74,7 +75,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Address attribute search model</param>
         /// <returns>Address attribute search model</returns>
-        public virtual AddressAttributeSearchModel PrepareAddressAttributeSearchModel(AddressAttributeSearchModel searchModel)
+        public virtual Task<AddressAttributeSearchModel> PrepareAddressAttributeSearchModelAsync(AddressAttributeSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -82,7 +83,7 @@ namespace Nop.Web.Areas.Admin.Factories
             //prepare page parameters
             searchModel.SetGridPageSize();
 
-            return searchModel;
+            return Task.FromResult(searchModel);
         }
 
         /// <summary>
@@ -90,29 +91,28 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Address attribute search model</param>
         /// <returns>Address attribute list model</returns>
-        public virtual AddressAttributeListModel PrepareAddressAttributeListModel(AddressAttributeSearchModel searchModel)
+        public virtual async Task<AddressAttributeListModel> PrepareAddressAttributeListModelAsync(AddressAttributeSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get address attributes
-            var addressAttributes = _addressAttributeService.GetAllAddressAttributes();
+            var addressAttributes = (await _addressAttributeService.GetAllAddressAttributesAsync()).ToPagedList(searchModel);
 
             //prepare grid model
-            var model = new AddressAttributeListModel
+            var model = await new AddressAttributeListModel().PrepareToGridAsync(searchModel, addressAttributes, () =>
             {
-                Data = addressAttributes.PaginationByRequestModel(searchModel).Select(attribute =>
+                return addressAttributes.SelectAwait(async attribute =>
                 {
                     //fill in model values from the entity
                     var attributeModel = attribute.ToModel<AddressAttributeModel>();
 
                     //fill in additional values (not existing in the entity)
-                    attributeModel.AttributeControlTypeName = _localizationService.GetLocalizedEnum(attribute.AttributeControlType);
+                    attributeModel.AttributeControlTypeName = await _localizationService.GetLocalizedEnumAsync(attribute.AttributeControlType);
 
                     return attributeModel;
-                }),
-                Total = addressAttributes.Count
-            };
+                });
+            });
 
             return model;
         }
@@ -124,7 +124,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="addressAttribute">Address attribute</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Address attribute model</returns>
-        public virtual AddressAttributeModel PrepareAddressAttributeModel(AddressAttributeModel model,
+        public virtual async Task<AddressAttributeModel> PrepareAddressAttributeModelAsync(AddressAttributeModel model,
             AddressAttribute addressAttribute, bool excludeProperties = false)
         {
             Action<AddressAttributeLocalizedModel, int> localizedModelConfiguration = null;
@@ -132,21 +132,21 @@ namespace Nop.Web.Areas.Admin.Factories
             if (addressAttribute != null)
             {
                 //fill in model values from the entity
-                model = model ?? addressAttribute.ToModel<AddressAttributeModel>();
+                model ??= addressAttribute.ToModel<AddressAttributeModel>();
 
                 //prepare nested search model
                 PrepareAddressAttributeValueSearchModel(model.AddressAttributeValueSearchModel, addressAttribute);
 
                 //define localized model configuration action
-                localizedModelConfiguration = (locale, languageId) =>
+                localizedModelConfiguration = async (locale, languageId) =>
                 {
-                    locale.Name = _localizationService.GetLocalized(addressAttribute, entity => entity.Name, languageId, false, false);
+                    locale.Name = await _localizationService.GetLocalizedAsync(addressAttribute, entity => entity.Name, languageId, false, false);
                 };
             }
 
             //prepare localized models
             if (!excludeProperties)
-                model.Locales = _localizedModelFactory.PrepareLocalizedModels(localizedModelConfiguration);
+                model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(localizedModelConfiguration);
 
             return model;
         }
@@ -157,7 +157,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="searchModel">Address attribute value search model</param>
         /// <param name="addressAttribute">Address attribute</param>
         /// <returns>Address attribute value list model</returns>
-        public virtual AddressAttributeValueListModel PrepareAddressAttributeValueListModel(AddressAttributeValueSearchModel searchModel,
+        public virtual async Task<AddressAttributeValueListModel> PrepareAddressAttributeValueListModelAsync(AddressAttributeValueSearchModel searchModel,
             AddressAttribute addressAttribute)
         {
             if (searchModel == null)
@@ -167,15 +167,14 @@ namespace Nop.Web.Areas.Admin.Factories
                 throw new ArgumentNullException(nameof(addressAttribute));
 
             //get address attribute values
-            var addressAttributeValues = _addressAttributeService.GetAddressAttributeValues(addressAttribute.Id);
+            var addressAttributeValues = (await _addressAttributeService.GetAddressAttributeValuesAsync(addressAttribute.Id)).ToPagedList(searchModel);
 
             //prepare grid model
-            var model = new AddressAttributeValueListModel
+            var model = new AddressAttributeValueListModel().PrepareToGrid(searchModel, addressAttributeValues, () =>
             {
                 //fill in model values from the entity
-                Data = addressAttributeValues.PaginationByRequestModel(searchModel).Select(value => value.ToModel<AddressAttributeValueModel>()),
-                Total = addressAttributeValues.Count
-            };
+                return addressAttributeValues.Select(value => value.ToModel<AddressAttributeValueModel>());
+            });
 
             return model;
         }
@@ -188,7 +187,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="addressAttributeValue">Address attribute value</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Address attribute value model</returns>
-        public virtual AddressAttributeValueModel PrepareAddressAttributeValueModel(AddressAttributeValueModel model,
+        public virtual async Task<AddressAttributeValueModel> PrepareAddressAttributeValueModelAsync(AddressAttributeValueModel model,
             AddressAttribute addressAttribute, AddressAttributeValue addressAttributeValue, bool excludeProperties = false)
         {
             if (addressAttribute == null)
@@ -199,12 +198,12 @@ namespace Nop.Web.Areas.Admin.Factories
             if (addressAttributeValue != null)
             {
                 //fill in model values from the entity
-                model = model ?? addressAttributeValue.ToModel<AddressAttributeValueModel>();
+                model ??= addressAttributeValue.ToModel<AddressAttributeValueModel>();
 
                 //define localized model configuration action
-                localizedModelConfiguration = (locale, languageId) =>
+                localizedModelConfiguration = async (locale, languageId) =>
                 {
-                    locale.Name = _localizationService.GetLocalized(addressAttributeValue, entity => entity.Name, languageId, false, false);
+                    locale.Name = await _localizationService.GetLocalizedAsync(addressAttributeValue, entity => entity.Name, languageId, false, false);
                 };
             }
 
@@ -212,7 +211,7 @@ namespace Nop.Web.Areas.Admin.Factories
 
             //prepare localized models
             if (!excludeProperties)
-                model.Locales = _localizedModelFactory.PrepareLocalizedModels(localizedModelConfiguration);
+                model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(localizedModelConfiguration);
 
             return model;
         }
@@ -222,12 +221,12 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="models">List of address attribute models</param>
         /// <param name="address">Address</param>
-        public virtual void PrepareCustomAddressAttributes(IList<AddressModel.AddressAttributeModel> models, Address address)
+        public virtual async Task PrepareCustomAddressAttributesAsync(IList<AddressModel.AddressAttributeModel> models, Address address)
         {
             if (models == null)
                 throw new ArgumentNullException(nameof(models));
 
-            var attributes = _addressAttributeService.GetAllAddressAttributes();
+            var attributes = await _addressAttributeService.GetAllAddressAttributesAsync();
             foreach (var attribute in attributes)
             {
                 var attributeModel = new AddressModel.AddressAttributeModel
@@ -241,7 +240,7 @@ namespace Nop.Web.Areas.Admin.Factories
                 if (attribute.ShouldHaveValues())
                 {
                     //values
-                    var attributeValues = _addressAttributeService.GetAddressAttributeValues(attribute.Id);
+                    var attributeValues = await _addressAttributeService.GetAddressAttributeValuesAsync(attribute.Id);
                     foreach (var attributeValue in attributeValues)
                     {
                         var attributeValueModel = new AddressModel.AddressAttributeValueModel
@@ -261,39 +260,39 @@ namespace Nop.Web.Areas.Admin.Factories
                     case AttributeControlType.DropdownList:
                     case AttributeControlType.RadioList:
                     case AttributeControlType.Checkboxes:
+                    {
+                        if (!string.IsNullOrEmpty(selectedAddressAttributes))
                         {
-                            if (!string.IsNullOrEmpty(selectedAddressAttributes))
-                            {
-                                //clear default selection
-                                foreach (var item in attributeModel.Values)
-                                    item.IsPreSelected = false;
+                            //clear default selection
+                            foreach (var item in attributeModel.Values)
+                                item.IsPreSelected = false;
 
-                                //select new values
-                                var selectedValues = _addressAttributeParser.ParseAddressAttributeValues(selectedAddressAttributes);
-                                foreach (var attributeValue in selectedValues)
-                                    foreach (var item in attributeModel.Values)
-                                        if (attributeValue.Id == item.Id)
-                                            item.IsPreSelected = true;
-                            }
+                            //select new values
+                            var selectedValues = await _addressAttributeParser.ParseAddressAttributeValuesAsync(selectedAddressAttributes);
+                            foreach (var attributeValue in selectedValues)
+                                foreach (var item in attributeModel.Values)
+                                    if (attributeValue.Id == item.Id)
+                                        item.IsPreSelected = true;
                         }
-                        break;
+                    }
+                    break;
                     case AttributeControlType.ReadonlyCheckboxes:
-                        {
-                            //do nothing
-                            //values are already pre-set
-                        }
-                        break;
+                    {
+                        //do nothing
+                        //values are already pre-set
+                    }
+                    break;
                     case AttributeControlType.TextBox:
                     case AttributeControlType.MultilineTextbox:
+                    {
+                        if (!string.IsNullOrEmpty(selectedAddressAttributes))
                         {
-                            if (!string.IsNullOrEmpty(selectedAddressAttributes))
-                            {
-                                var enteredText = _addressAttributeParser.ParseValues(selectedAddressAttributes, attribute.Id);
-                                if (enteredText.Any())
-                                    attributeModel.DefaultValue = enteredText[0];
-                            }
+                            var enteredText = _addressAttributeParser.ParseValues(selectedAddressAttributes, attribute.Id);
+                            if (enteredText.Any())
+                                attributeModel.DefaultValue = enteredText[0];
                         }
-                        break;
+                    }
+                    break;
                     case AttributeControlType.ColorSquares:
                     case AttributeControlType.ImageSquares:
                     case AttributeControlType.Datepicker:

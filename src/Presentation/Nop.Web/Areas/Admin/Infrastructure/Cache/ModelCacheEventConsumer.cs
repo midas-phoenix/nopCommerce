@@ -1,22 +1,20 @@
-﻿using Nop.Core.Caching;
+﻿using System.Threading.Tasks;
+using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Configuration;
 using Nop.Core.Domain.Vendors;
 using Nop.Core.Events;
 using Nop.Services.Events;
+using Nop.Services.Plugins;
 
 namespace Nop.Web.Areas.Admin.Infrastructure.Cache
 {
     /// <summary>
     /// Model cache event consumer (used for caching of presentation layer models)
     /// </summary>
-    public partial class ModelCacheEventConsumer: 
+    public partial class ModelCacheEventConsumer :
         //settings
         IConsumer<EntityUpdatedEvent<Setting>>,
-        //specification attributes
-        IConsumer<EntityInsertedEvent<SpecificationAttribute>>,
-        IConsumer<EntityUpdatedEvent<SpecificationAttribute>>,
-        IConsumer<EntityDeletedEvent<SpecificationAttribute>>,
         //categories
         IConsumer<EntityInsertedEvent<Category>>,
         IConsumer<EntityUpdatedEvent<Category>>,
@@ -28,76 +26,84 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Cache
         //vendors
         IConsumer<EntityInsertedEvent<Vendor>>,
         IConsumer<EntityUpdatedEvent<Vendor>>,
-        IConsumer<EntityDeletedEvent<Vendor>>
-    {
+        IConsumer<EntityDeletedEvent<Vendor>>,
 
-        private readonly ICacheManager _cacheManager;
-        
-        public ModelCacheEventConsumer(IStaticCacheManager cacheManager)
+        IConsumer<PluginUpdatedEvent>
+    {
+        #region Fields
+
+        private readonly IStaticCacheManager _staticCacheManager;
+
+        #endregion
+
+        #region Ctor
+
+        public ModelCacheEventConsumer(IStaticCacheManager staticCacheManager)
         {
-            this._cacheManager = cacheManager;
+            _staticCacheManager = staticCacheManager;
         }
 
-        public void HandleEvent(EntityUpdatedEvent<Setting> eventMessage)
+        #endregion
+
+        #region Methods
+
+        public async Task HandleEventAsync(EntityUpdatedEvent<Setting> eventMessage)
         {
             //clear models which depend on settings
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.OfficialNewsPatternKey); //depends on AdminAreaSettings.HideAdvertisementsOnAdminArea
-        }
-
-        //specification attributes
-        public void HandleEvent(EntityInsertedEvent<SpecificationAttribute> eventMessage)
-        {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.SpecAttributesPatternKey);
-        }
-        public void HandleEvent(EntityUpdatedEvent<SpecificationAttribute> eventMessage)
-        {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.SpecAttributesPatternKey);
-        }
-        public void HandleEvent(EntityDeletedEvent<SpecificationAttribute> eventMessage)
-        {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.SpecAttributesPatternKey);
+            await _staticCacheManager.RemoveAsync(NopModelCacheDefaults.OfficialNewsModelKey); //depends on AdminAreaSettings.HideAdvertisementsOnAdminArea
         }
 
         //categories
-        public void HandleEvent(EntityInsertedEvent<Category> eventMessage)
+        public async Task HandleEventAsync(EntityInsertedEvent<Category> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.CategoriesListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoriesListPrefixCacheKey);
         }
-        public void HandleEvent(EntityUpdatedEvent<Category> eventMessage)
+        public async Task HandleEventAsync(EntityUpdatedEvent<Category> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.CategoriesListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoriesListPrefixCacheKey);
         }
-        public void HandleEvent(EntityDeletedEvent<Category> eventMessage)
+        public async Task HandleEventAsync(EntityDeletedEvent<Category> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.CategoriesListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoriesListPrefixCacheKey);
         }
 
         //manufacturers
-        public void HandleEvent(EntityInsertedEvent<Manufacturer> eventMessage)
+        public async Task HandleEventAsync(EntityInsertedEvent<Manufacturer> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.ManufacturersListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.ManufacturersListPrefixCacheKey);
         }
-        public void HandleEvent(EntityUpdatedEvent<Manufacturer> eventMessage)
+        public async Task HandleEventAsync(EntityUpdatedEvent<Manufacturer> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.ManufacturersListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.ManufacturersListPrefixCacheKey);
         }
-        public void HandleEvent(EntityDeletedEvent<Manufacturer> eventMessage)
+        public async Task HandleEventAsync(EntityDeletedEvent<Manufacturer> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.ManufacturersListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.ManufacturersListPrefixCacheKey);
         }
 
         //vendors
-        public void HandleEvent(EntityInsertedEvent<Vendor> eventMessage)
+        public async Task HandleEventAsync(EntityInsertedEvent<Vendor> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.VendorsListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.VendorsListPrefixCacheKey);
         }
-        public void HandleEvent(EntityUpdatedEvent<Vendor> eventMessage)
+        public async Task HandleEventAsync(EntityUpdatedEvent<Vendor> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.VendorsListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.VendorsListPrefixCacheKey);
         }
-        public void HandleEvent(EntityDeletedEvent<Vendor> eventMessage)
+        public async Task HandleEventAsync(EntityDeletedEvent<Vendor> eventMessage)
         {
-            _cacheManager.RemoveByPattern(NopModelCacheDefaults.VendorsListPatternKey);
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.VendorsListPrefixCacheKey);
         }
+
+        /// <summary>
+        /// Handle plugin updated event
+        /// </summary>
+        /// <param name="eventMessage">Event</param>
+        public async Task HandleEventAsync(PluginUpdatedEvent eventMessage)
+        {
+            await _staticCacheManager.RemoveByPrefixAsync(NopPluginDefaults.AdminNavigationPluginsPrefix);
+        }
+
+        #endregion
     }
 }

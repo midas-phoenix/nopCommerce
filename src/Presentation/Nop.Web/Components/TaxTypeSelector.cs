@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.Tax;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Components;
@@ -13,16 +14,16 @@ namespace Nop.Web.Components
         public TaxTypeSelectorViewComponent(ICommonModelFactory commonModelFactory,
             TaxSettings taxSettings)
         {
-            this._commonModelFactory = commonModelFactory;
-            this._taxSettings = taxSettings;
+            _commonModelFactory = commonModelFactory;
+            _taxSettings = taxSettings;
         }
 
-        public IViewComponentResult Invoke()
+        public async Task<IViewComponentResult> InvokeAsync()
         {
             if (!_taxSettings.AllowCustomersToSelectTaxDisplayType)
                 return Content("");
 
-            var model = _commonModelFactory.PrepareTaxTypeSelectorModel();
+            var model = await _commonModelFactory.PrepareTaxTypeSelectorModelAsync();
             return View(model);
         }
     }

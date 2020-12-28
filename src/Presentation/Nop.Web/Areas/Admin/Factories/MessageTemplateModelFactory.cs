@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Messages;
 using Nop.Services.Localization;
@@ -9,6 +11,7 @@ using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Messages;
 using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Factories;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -41,14 +44,14 @@ namespace Nop.Web.Areas.Admin.Factories
             IStoreMappingSupportedModelFactory storeMappingSupportedModelFactory,
             IStoreService storeService)
         {
-            this._catalogSettings = catalogSettings;
-            this._baseAdminModelFactory = baseAdminModelFactory;
-            this._localizationService = localizationService;
-            this._localizedModelFactory = localizedModelFactory;
-            this._messageTemplateService = messageTemplateService;
-            this._messageTokenProvider = messageTokenProvider;
-            this._storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
-            this._storeService = storeService;
+            _catalogSettings = catalogSettings;
+            _baseAdminModelFactory = baseAdminModelFactory;
+            _localizationService = localizationService;
+            _localizedModelFactory = localizedModelFactory;
+            _messageTemplateService = messageTemplateService;
+            _messageTokenProvider = messageTokenProvider;
+            _storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
+            _storeService = storeService;
         }
 
         #endregion
@@ -60,13 +63,13 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Message template search model</param>
         /// <returns>Message template search model</returns>
-        public virtual MessageTemplateSearchModel PrepareMessageTemplateSearchModel(MessageTemplateSearchModel searchModel)
+        public virtual async Task<MessageTemplateSearchModel> PrepareMessageTemplateSearchModelAsync(MessageTemplateSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //prepare available stores
-            _baseAdminModelFactory.PrepareStores(searchModel.AvailableStores);
+            await _baseAdminModelFactory.PrepareStoresAsync(searchModel.AvailableStores);
 
             searchModel.HideStoresList = _catalogSettings.IgnoreStoreLimitations || searchModel.AvailableStores.SelectionIsNotPossible();
 
@@ -81,21 +84,22 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Message template search model</param>
         /// <returns>Message template list model</returns>
-        public virtual MessageTemplateListModel PrepareMessageTemplateListModel(MessageTemplateSearchModel searchModel)
+        public virtual async Task<MessageTemplateListModel> PrepareMessageTemplateListModelAsync(MessageTemplateSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get message templates
-            var messageTemplates = _messageTemplateService.GetAllMessageTemplates(storeId: searchModel.SearchStoreId);
+            var messageTemplates = (await _messageTemplateService
+                .GetAllMessageTemplatesAsync(storeId: searchModel.SearchStoreId)).ToPagedList(searchModel);
 
             //prepare store names (to avoid loading for each message template)
-            var stores = _storeService.GetAllStores().Select(store => new { store.Id, store.Name }).ToList();
+            var stores = (await _storeService.GetAllStoresAsync()).Select(store => new { store.Id, store.Name }).ToList();
 
             //prepare list model
-            var model = new MessageTemplateListModel
+            var model = await new MessageTemplateListModel().PrepareToGridAsync(searchModel, messageTemplates, () =>
             {
-                Data = messageTemplates.PaginationByRequestModel(searchModel).Select(messageTemplate =>
+                return messageTemplates.SelectAwait(async messageTemplate =>
                 {
                     //fill in model values from the entity
                     var messageTemplateModel = messageTemplate.ToModel<MessageTemplateModel>();
@@ -104,7 +108,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     var storeNames = stores.Select(store => store.Name);
                     if (messageTemplate.LimitedToStores)
                     {
-                        _storeMappingSupportedModelFactory.PrepareModelStores(messageTemplateModel, messageTemplate, false);
+                        await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(messageTemplateModel, messageTemplate, false);
                         storeNames = stores
                             .Where(store => messageTemplateModel.SelectedStoreIds.Contains(store.Id)).Select(store => store.Name);
                     }
@@ -112,9 +116,8 @@ namespace Nop.Web.Areas.Admin.Factories
                     messageTemplateModel.ListOfStores = string.Join(", ", storeNames);
 
                     return messageTemplateModel;
-                }),
-                Total = messageTemplates.Count
-            };
+                });
+            });
 
             return model;
         }
@@ -126,7 +129,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="messageTemplate">Message template</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Message template model</returns>
-        public virtual MessageTemplateModel PrepareMessageTemplateModel(MessageTemplateModel model,
+        public virtual async Task<MessageTemplateModel> PrepareMessageTemplateModelAsync(MessageTemplateModel model,
             MessageTemplate messageTemplate, bool excludeProperties = false)
         {
             Action<MessageTemplateLocalizedModel, int> localizedModelConfiguration = null;
@@ -134,38 +137,45 @@ namespace Nop.Web.Areas.Admin.Factories
             if (messageTemplate != null)
             {
                 //fill in model values from the entity
-                model = model ?? messageTemplate.ToModel<MessageTemplateModel>();
+                model ??= messageTemplate.ToModel<MessageTemplateModel>();
 
                 //define localized model configuration action
-                localizedModelConfiguration = (locale, languageId) =>
+                localizedModelConfiguration = async (locale, languageId) =>
                 {
-                    locale.BccEmailAddresses = _localizationService.GetLocalized(messageTemplate, entity => entity.BccEmailAddresses, languageId, false, false);
-                    locale.Subject = _localizationService.GetLocalized(messageTemplate, entity => entity.Subject, languageId, false, false);
-                    locale.Body = _localizationService.GetLocalized(messageTemplate, entity => entity.Body, languageId, false, false);
-                    locale.EmailAccountId = _localizationService.GetLocalized(messageTemplate, entity => entity.EmailAccountId, languageId, false, false);
+                    locale.BccEmailAddresses = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.BccEmailAddresses, languageId, false, false);
+                    locale.Subject = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.Subject, languageId, false, false);
+                    locale.Body = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.Body, languageId, false, false);
+                    locale.EmailAccountId = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.EmailAccountId, languageId, false, false);
 
                     //prepare available email accounts
-                    _baseAdminModelFactory.PrepareEmailAccounts(locale.AvailableEmailAccounts,
-                        defaultItemText: _localizationService.GetResource("Admin.ContentManagement.MessageTemplates.Fields.EmailAccount.Standard"));
+                    await _baseAdminModelFactory.PrepareEmailAccountsAsync(locale.AvailableEmailAccounts,
+                        defaultItemText: await _localizationService.GetResourceAsync("Admin.ContentManagement.MessageTemplates.Fields.EmailAccount.Standard"));
+
+                    //PrepareEmailAccounts only gets available accounts, we need to set the item as selected manually
+                    if (locale.AvailableEmailAccounts?.FirstOrDefault(x => x.Value == locale.EmailAccountId.ToString()) is SelectListItem emailAccountListItem)
+                    {
+                        emailAccountListItem.Selected = true;
+                    }
+
                 };
             }
 
             model.SendImmediately = !model.DelayBeforeSend.HasValue;
             model.HasAttachedDownload = model.AttachedDownloadId > 0;
 
-            var allowedTokens = string.Join(", ", _messageTokenProvider.GetListOfAllowedTokens(_messageTokenProvider.GetTokenGroups(messageTemplate)));
+            var allowedTokens = string.Join(", ", await _messageTokenProvider.GetListOfAllowedTokensAsync(_messageTokenProvider.GetTokenGroups(messageTemplate)));
             model.AllowedTokens = $"{allowedTokens}{Environment.NewLine}{Environment.NewLine}" +
-                $"{_localizationService.GetResource("Admin.ContentManagement.MessageTemplates.Tokens.ConditionalStatement")}{Environment.NewLine}";
+                $"{await _localizationService.GetResourceAsync("Admin.ContentManagement.MessageTemplates.Tokens.ConditionalStatement")}{Environment.NewLine}";
 
             //prepare localized models
             if (!excludeProperties)
-                model.Locales = _localizedModelFactory.PrepareLocalizedModels(localizedModelConfiguration);
+                model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(localizedModelConfiguration);
 
             //prepare available email accounts
-            _baseAdminModelFactory.PrepareEmailAccounts(model.AvailableEmailAccounts);
+            await _baseAdminModelFactory.PrepareEmailAccountsAsync(model.AvailableEmailAccounts);
 
             //prepare available stores
-            _storeMappingSupportedModelFactory.PrepareModelStores(model, messageTemplate, excludeProperties);
+            await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(model, messageTemplate, excludeProperties);
 
             return model;
         }
@@ -177,7 +187,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="messageTemplate">Message template</param>
         /// <param name="languageId">Language identifier</param>
         /// <returns>Test message template model</returns>
-        public virtual TestMessageTemplateModel PrepareTestMessageTemplateModel(TestMessageTemplateModel model,
+        public virtual async Task<TestMessageTemplateModel> PrepareTestMessageTemplateModelAsync(TestMessageTemplateModel model,
             MessageTemplate messageTemplate, int languageId)
         {
             if (model == null)
@@ -190,9 +200,9 @@ namespace Nop.Web.Areas.Admin.Factories
             model.LanguageId = languageId;
 
             //filter tokens to the current template
-            var subject = _localizationService.GetLocalized(messageTemplate, entity => entity.Subject, languageId);
-            var body = _localizationService.GetLocalized(messageTemplate, entity => entity.Body, languageId);
-            model.Tokens = _messageTokenProvider.GetListOfAllowedTokens()
+            var subject = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.Subject, languageId);
+            var body = await _localizationService.GetLocalizedAsync(messageTemplate, entity => entity.Body, languageId);
+            model.Tokens = (await _messageTokenProvider.GetListOfAllowedTokensAsync())
                 .Where(token => subject.Contains(token) || body.Contains(token)).ToList();
 
             return model;

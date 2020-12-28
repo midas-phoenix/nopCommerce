@@ -1,6 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.Customers;
-using Nop.Core.Plugins;
+using Nop.Core.Events;
 using Nop.Services.Authentication.External;
 using Nop.Services.Configuration;
 using Nop.Services.Plugins;
@@ -16,10 +17,10 @@ namespace Nop.Web.Areas.Admin.Controllers
         #region Fields
 
         private readonly ExternalAuthenticationSettings _externalAuthenticationSettings;
+        private readonly IAuthenticationPluginManager _authenticationPluginManager;
+        private readonly IEventPublisher _eventPublisher;
         private readonly IExternalAuthenticationMethodModelFactory _externalAuthenticationMethodModelFactory;
-        private readonly IExternalAuthenticationService _externalAuthenticationService;
         private readonly IPermissionService _permissionService;
-        private readonly IPluginFinder _pluginFinder;
         private readonly ISettingService _settingService;
 
         #endregion
@@ -27,27 +28,27 @@ namespace Nop.Web.Areas.Admin.Controllers
         #region Ctor
 
         public ExternalAuthenticationController(ExternalAuthenticationSettings externalAuthenticationSettings,
+            IAuthenticationPluginManager authenticationPluginManager,
+            IEventPublisher eventPublisher,
             IExternalAuthenticationMethodModelFactory externalAuthenticationMethodModelFactory,
-            IExternalAuthenticationService externalAuthenticationService,
             IPermissionService permissionService,
-            IPluginFinder pluginFinder,
             ISettingService settingService)
         {
-            this._externalAuthenticationSettings = externalAuthenticationSettings;
-            this._externalAuthenticationMethodModelFactory = externalAuthenticationMethodModelFactory;
-            this._externalAuthenticationService = externalAuthenticationService;
-            this._permissionService = permissionService;
-            this._pluginFinder = pluginFinder;
-            this._settingService = settingService;
+            _externalAuthenticationSettings = externalAuthenticationSettings;
+            _authenticationPluginManager = authenticationPluginManager;
+            _eventPublisher = eventPublisher;
+            _externalAuthenticationMethodModelFactory = externalAuthenticationMethodModelFactory;
+            _permissionService = permissionService;
+            _settingService = settingService;
         }
 
         #endregion
 
         #region Methods
 
-        public virtual IActionResult Methods()
+        public virtual async Task<IActionResult> Methods()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageExternalAuthenticationMethods))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageExternalAuthenticationMethods))
                 return AccessDeniedView();
 
             //prepare model
@@ -58,31 +59,31 @@ namespace Nop.Web.Areas.Admin.Controllers
         }
 
         [HttpPost]
-        public virtual IActionResult Methods(ExternalAuthenticationMethodSearchModel searchModel)
+        public virtual async Task<IActionResult> Methods(ExternalAuthenticationMethodSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageExternalAuthenticationMethods))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageExternalAuthenticationMethods))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _externalAuthenticationMethodModelFactory.PrepareExternalAuthenticationMethodListModel(searchModel);
+            var model = await _externalAuthenticationMethodModelFactory.PrepareExternalAuthenticationMethodListModelAsync(searchModel);
 
             return Json(model);
         }
 
         [HttpPost]
-        public virtual IActionResult MethodUpdate(ExternalAuthenticationMethodModel model)
+        public virtual async Task<IActionResult> MethodUpdate(ExternalAuthenticationMethodModel model)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageExternalAuthenticationMethods))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageExternalAuthenticationMethods))
                 return AccessDeniedView();
 
-            var eam = _externalAuthenticationService.LoadExternalAuthenticationMethodBySystemName(model.SystemName);
-            if (_externalAuthenticationService.IsExternalAuthenticationMethodActive(eam))
+            var method = await _authenticationPluginManager.LoadPluginBySystemNameAsync(model.SystemName);
+            if (_authenticationPluginManager.IsPluginActive(method))
             {
                 if (!model.IsActive)
                 {
                     //mark as disabled
-                    _externalAuthenticationSettings.ActiveAuthenticationMethodSystemNames.Remove(eam.PluginDescriptor.SystemName);
-                    _settingService.SaveSetting(_externalAuthenticationSettings);
+                    _externalAuthenticationSettings.ActiveAuthenticationMethodSystemNames.Remove(method.PluginDescriptor.SystemName);
+                    await _settingService.SaveSettingAsync(_externalAuthenticationSettings);
                 }
             }
             else
@@ -90,19 +91,19 @@ namespace Nop.Web.Areas.Admin.Controllers
                 if (model.IsActive)
                 {
                     //mark as active
-                    _externalAuthenticationSettings.ActiveAuthenticationMethodSystemNames.Add(eam.PluginDescriptor.SystemName);
-                    _settingService.SaveSetting(_externalAuthenticationSettings);
+                    _externalAuthenticationSettings.ActiveAuthenticationMethodSystemNames.Add(method.PluginDescriptor.SystemName);
+                    await _settingService.SaveSettingAsync(_externalAuthenticationSettings);
                 }
             }
 
-            var pluginDescriptor = eam.PluginDescriptor;
+            var pluginDescriptor = method.PluginDescriptor;
             pluginDescriptor.DisplayOrder = model.DisplayOrder;
 
             //update the description file
-            PluginManager.SavePluginDescriptor(pluginDescriptor);
+            pluginDescriptor.Save();
 
-            //reset plugin cache
-            _pluginFinder.ReloadPlugins(pluginDescriptor);
+            //raise event
+            await _eventPublisher.PublishAsync(new PluginUpdatedEvent(pluginDescriptor));
 
             return new NullJsonResult();
         }

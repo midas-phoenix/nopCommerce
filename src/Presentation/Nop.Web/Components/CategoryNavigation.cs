@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Components;
 
@@ -10,12 +11,12 @@ namespace Nop.Web.Components
 
         public CategoryNavigationViewComponent(ICatalogModelFactory catalogModelFactory)
         {
-            this._catalogModelFactory = catalogModelFactory;
+            _catalogModelFactory = catalogModelFactory;
         }
 
-        public IViewComponentResult Invoke(int currentCategoryId, int currentProductId)
+        public async Task<IViewComponentResult> InvokeAsync(int currentCategoryId, int currentProductId)
         {
-            var model = _catalogModelFactory.PrepareCategoryNavigationModel(currentCategoryId, currentProductId);
+            var model = await _catalogModelFactory.PrepareCategoryNavigationModelAsync(currentCategoryId, currentProductId);
             return View(model);
         }
     }

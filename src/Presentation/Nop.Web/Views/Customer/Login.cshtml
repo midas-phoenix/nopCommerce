@@ -12,11 +12,7 @@
     Html.AppendPageCssClassParts("html-login-page");
 
     //register URL with return URL (if specified)
-    var registerUrl = Url.RouteUrl("Register", null, webHelper.CurrentRequestProtocol);
-    if (!string.IsNullOrEmpty(this.Context.Request.Query["returnUrl"]))
-    {
-        registerUrl = webHelper.ModifyQueryString(registerUrl, "returnurl", this.Context.Request.Query["returnUrl"]);
-    }
+    var registerUrl = Url.RouteUrl("Register", new { returnUrl = this.Context.Request.Query["returnUrl"] }, webHelper.GetCurrentRequestProtocol());
 }
 <div class="page login-page">
     <div class="page-title">
@@ -66,7 +62,7 @@
                 </div>
             }
             <div class="returning-wrapper fieldset">
-                <form asp-route="Login" asp-route-returnurl="@Context.Request.Query["ReturnUrl"]" method="post">
+                <form asp-route="Login" asp-route-returnurl="@Context.Request.Query["ReturnUrl"]" method="post" autocomplete="off">
                     <div asp-validation-summary="ModelOnly" class="message-error">@T("Account.Login.Unsuccessful")</div>
                     <div class="title">
                         <strong>@T("Account.Login.ReturningCustomer")</strong>
@@ -102,9 +98,7 @@
                         </div>
                         @if (Model.DisplayCaptcha)
                         {
-                            <div class="captcha-box">
-                                <nop-captcha />
-                            </div>
+                            <nop-captcha />
                         }
                     </div>
                     <div class="buttons">

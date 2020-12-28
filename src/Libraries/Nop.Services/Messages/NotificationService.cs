@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Newtonsoft.Json;
@@ -42,37 +43,39 @@ namespace Nop.Services.Messages
         /// <summary>
         /// Save message into TempData
         /// </summary>
-        /// <param name="context">HttpContext</param>
         /// <param name="type">Notification type</param>
         /// <param name="message">Message</param>
-        protected virtual void PrepareTempData(HttpContext context, NotifyType type, string message)
+        /// <param name="encode">A value indicating whether the message should not be encoded</param>
+        protected virtual void PrepareTempData(NotifyType type, string message, bool encode = true)
         {
+            var context = _httpContextAccessor.HttpContext;
             var tempData = _tempDataDictionaryFactory.GetTempData(context);
 
             //Messages have stored in a serialized list
-            var messageList = tempData.ContainsKey(NopMessageDefaults.NotificationListKey)
+            var messages = tempData.ContainsKey(NopMessageDefaults.NotificationListKey)
                 ? JsonConvert.DeserializeObject<IList<NotifyData>>(tempData[NopMessageDefaults.NotificationListKey].ToString())
                 : new List<NotifyData>();
 
-            messageList.Add(new NotifyData
+            messages.Add(new NotifyData
             {
                 Message = message,
-                Type = type
+                Type = type,
+                Encode = encode
             });
 
-            tempData[NopMessageDefaults.NotificationListKey] = JsonConvert.SerializeObject(messageList);
+            tempData[NopMessageDefaults.NotificationListKey] = JsonConvert.SerializeObject(messages);
         }
 
         /// <summary>
         /// Log exception
         /// </summary>
         /// <param name="exception">Exception</param>
-        protected virtual void LogException(Exception exception)
+        protected virtual async Task LogExceptionAsync(Exception exception)
         {
             if (exception == null)
                 return;
-            var customer = _workContext.CurrentCustomer;
-            _logger.Error(exception.Message, exception, customer);
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            await _logger.ErrorAsync(exception.Message, exception, customer);
         }
 
         #endregion
@@ -80,33 +83,44 @@ namespace Nop.Services.Messages
         #region Methods
 
         /// <summary>
+        /// Display notification
+        /// </summary>
+        /// <param name="type">Notification type</param>
+        /// <param name="message">Message</param>
+        /// <param name="encode">A value indicating whether the message should not be encoded</param>
+        public virtual void Notification(NotifyType type, string message, bool encode = true)
+        {
+            PrepareTempData(type, message, encode);
+        }
+
+        /// <summary>
         /// Display success notification
         /// </summary>
         /// <param name="message">Message</param>
-        /// <param name="context">HttpContext</param>
-        public virtual void SuccessNotification(string message, HttpContext context = null)
+        /// <param name="encode">A value indicating whether the message should not be encoded</param>
+        public virtual void SuccessNotification(string message, bool encode = true)
         {
-            PrepareTempData(context ?? _httpContextAccessor.HttpContext, NotifyType.Success, message);
+            PrepareTempData(NotifyType.Success, message, encode);
         }
 
         /// <summary>
         /// Display warning notification
         /// </summary>
         /// <param name="message">Message</param>
-        /// <param name="context">HttpContext</param>
-        public virtual void WarningNotification(string message, HttpContext context = null)
+        /// <param name="encode">A value indicating whether the message should not be encoded</param>
+        public virtual void WarningNotification(string message, bool encode = true)
         {
-            PrepareTempData(context ?? _httpContextAccessor.HttpContext, NotifyType.Warning, message);
+            PrepareTempData(NotifyType.Warning, message, encode);
         }
 
         /// <summary>
         /// Display error notification
         /// </summary>
         /// <param name="message">Message</param>
-        /// <param name="context">HttpContext</param>
-        public virtual void ErrorNotification(string message, HttpContext context = null)
+        /// <param name="encode">A value indicating whether the message should not be encoded</param>
+        public virtual void ErrorNotification(string message, bool encode = true)
         {
-            PrepareTempData(context ?? _httpContextAccessor.HttpContext, NotifyType.Error, message);
+            PrepareTempData(NotifyType.Error, message, encode);
         }
 
         /// <summary>
@@ -114,16 +128,15 @@ namespace Nop.Services.Messages
         /// </summary>
         /// <param name="exception">Exception</param>
         /// <param name="logException">A value indicating whether exception should be logged</param>
-        /// <param name="context">HttpContext</param>
-        public virtual void ErrorNotification(Exception exception, bool logException = true, HttpContext context = null)
+        public virtual async Task ErrorNotificationAsync(Exception exception, bool logException = true)
         {
             if (exception == null)
                 return;
 
             if (logException)
-                LogException(exception);
+                await LogExceptionAsync(exception);
 
-            ErrorNotification(exception.Message, context);
+            ErrorNotification(exception.Message);
         }
 
         #endregion

@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Logging;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Logging;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -17,6 +20,7 @@ namespace Nop.Web.Areas.Admin.Factories
 
         private readonly IBaseAdminModelFactory _baseAdminModelFactory;
         private readonly ICustomerActivityService _customerActivityService;
+        private readonly ICustomerService _customerService;
         private readonly IDateTimeHelper _dateTimeHelper;
 
         #endregion
@@ -25,11 +29,30 @@ namespace Nop.Web.Areas.Admin.Factories
 
         public ActivityLogModelFactory(IBaseAdminModelFactory baseAdminModelFactory,
             ICustomerActivityService customerActivityService,
+            ICustomerService customerService,
             IDateTimeHelper dateTimeHelper)
         {
-            this._baseAdminModelFactory = baseAdminModelFactory;
-            this._customerActivityService = customerActivityService;
-            this._dateTimeHelper = dateTimeHelper;
+            _baseAdminModelFactory = baseAdminModelFactory;
+            _customerActivityService = customerActivityService;
+            _customerService = customerService;
+            _dateTimeHelper = dateTimeHelper;
+        }
+
+        #endregion
+
+        #region Utilities
+
+        /// <summary>
+        /// Prepare activity log type models
+        /// </summary>
+        /// <returns>List of activity log type models</returns>
+        protected virtual async Task<IList<ActivityLogTypeModel>> PrepareActivityLogTypeModelsAsync()
+        {
+            //prepare available activity log types
+            var availableActivityTypes = await _customerActivityService.GetAllActivityTypesAsync();
+            var models = availableActivityTypes.Select(activityType => activityType.ToModel<ActivityLogTypeModel>()).ToList();
+
+            return models;
         }
 
         #endregion
@@ -37,33 +60,21 @@ namespace Nop.Web.Areas.Admin.Factories
         #region Methods
 
         /// <summary>
-        /// Prepare activity log container model
+        /// Prepare activity log types search model
         /// </summary>
-        /// <param name="activityLogContainerModel">Activity log container model</param>
-        /// <returns>Activity log container model</returns>
-        public virtual ActivityLogContainerModel PrepareActivityLogContainerModel(ActivityLogContainerModel activityLogContainerModel)
+        /// <param name="searchModel">Activity log types search model</param>
+        /// <returns>Activity log types search model</returns>
+        public virtual async Task<ActivityLogTypeSearchModel> PrepareActivityLogTypeSearchModelAsync(ActivityLogTypeSearchModel searchModel)
         {
-            if (activityLogContainerModel == null)
-                throw new ArgumentNullException(nameof(activityLogContainerModel));
+            if (searchModel == null)
+                throw new ArgumentNullException(nameof(searchModel));
 
-            //prepare nested models
-            PrepareActivityLogSearchModel(activityLogContainerModel.ListLogs);
-            activityLogContainerModel.ListTypes = PrepareActivityLogTypeModels();
+            searchModel.ActivityLogTypeListModel = await PrepareActivityLogTypeModelsAsync();
 
-            return activityLogContainerModel;
-        }
+            //prepare grid
+            searchModel.SetGridPageSize();
 
-        /// <summary>
-        /// Prepare activity log type models
-        /// </summary>
-        /// <returns>List of activity log type models</returns>
-        public virtual IList<ActivityLogTypeModel> PrepareActivityLogTypeModels()
-        {
-            //prepare available activity log types
-            var availableActivityTypes = _customerActivityService.GetAllActivityTypes();
-            var models = availableActivityTypes.Select(activityType => activityType.ToModel<ActivityLogTypeModel>()).ToList();
-
-            return models;
+            return searchModel;
         }
 
         /// <summary>
@@ -71,15 +82,15 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Activity log search model</param>
         /// <returns>Activity log search model</returns>
-        public virtual ActivityLogSearchModel PrepareActivityLogSearchModel(ActivityLogSearchModel searchModel)
+        public virtual async Task<ActivityLogSearchModel> PrepareActivityLogSearchModelAsync(ActivityLogSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //prepare available activity log types
-            _baseAdminModelFactory.PrepareActivityLogTypes(searchModel.ActivityLogType);
+            await _baseAdminModelFactory.PrepareActivityLogTypesAsync(searchModel.ActivityLogType);
 
-            //prepare page parameters
+            //prepare grid
             searchModel.SetGridPageSize();
 
             return searchModel;
@@ -90,42 +101,46 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Activity log search model</param>
         /// <returns>Activity log list model</returns>
-        public virtual ActivityLogListModel PrepareActivityLogListModel(ActivityLogSearchModel searchModel)
+        public virtual async Task<ActivityLogListModel> PrepareActivityLogListModelAsync(ActivityLogSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
-            
+
             //get parameters to filter log
             var startDateValue = searchModel.CreatedOnFrom == null ? null
-                : (DateTime?)_dateTimeHelper.ConvertToUtcTime(searchModel.CreatedOnFrom.Value, _dateTimeHelper.CurrentTimeZone);
+                : (DateTime?)_dateTimeHelper.ConvertToUtcTime(searchModel.CreatedOnFrom.Value, await _dateTimeHelper.GetCurrentTimeZoneAsync());
             var endDateValue = searchModel.CreatedOnTo == null ? null
-                : (DateTime?)_dateTimeHelper.ConvertToUtcTime(searchModel.CreatedOnTo.Value, _dateTimeHelper.CurrentTimeZone).AddDays(1);
+                : (DateTime?)_dateTimeHelper.ConvertToUtcTime(searchModel.CreatedOnTo.Value, await _dateTimeHelper.GetCurrentTimeZoneAsync()).AddDays(1);
 
             //get log
-            var activityLog = _customerActivityService.GetAllActivities(createdOnFrom: startDateValue,
+            var activityLog = await _customerActivityService.GetAllActivitiesAsync(createdOnFrom: startDateValue,
                 createdOnTo: endDateValue,
                 activityLogTypeId: searchModel.ActivityLogTypeId,
                 ipAddress: searchModel.IpAddress,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
 
+            if (activityLog is null)
+                return new ActivityLogListModel();
+
             //prepare list model
-            var model = new ActivityLogListModel
+            var customerIds = activityLog.GroupBy(logItem => logItem.CustomerId).Select(logItem => logItem.Key);
+            var activityLogCustomers = await _customerService.GetCustomersByIdsAsync(customerIds.ToArray());
+            var model = await new ActivityLogListModel().PrepareToGridAsync(searchModel, activityLog, () =>
             {
-                Data = activityLog.Select(logItem =>
+                return activityLog.SelectAwait(async logItem =>
                 {
                     //fill in model values from the entity
                     var logItemModel = logItem.ToModel<ActivityLogModel>();
-                    logItemModel.ActivityLogTypeName = logItem.ActivityLogType.Name;
-                    logItemModel.CustomerEmail = logItem.Customer.Email;
+                    logItemModel.ActivityLogTypeName = (await _customerActivityService.GetActivityTypeByIdAsync(logItem.ActivityLogTypeId))?.Name;
+
+                    logItemModel.CustomerEmail = activityLogCustomers?.FirstOrDefault(x => x.Id == logItem.CustomerId)?.Email;
 
                     //convert dates to the user time
-                    logItemModel.CreatedOn = _dateTimeHelper.ConvertToUserTime(logItem.CreatedOnUtc, DateTimeKind.Utc);
+                    logItemModel.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(logItem.CreatedOnUtc, DateTimeKind.Utc);
 
                     return logItemModel;
-
-                }),
-                Total = activityLog.TotalCount
-            };
+                });
+            });
 
             return model;
         }

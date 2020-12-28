@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Components;
 
@@ -16,16 +17,16 @@ namespace Nop.Web.Components
 
         public ExternalMethodsViewComponent(IExternalAuthenticationModelFactory externalAuthenticationModelFactory)
         {
-            this._externalAuthenticationModelFactory = externalAuthenticationModelFactory;
+            _externalAuthenticationModelFactory = externalAuthenticationModelFactory;
         }
 
         #endregion
 
         #region Methods
 
-        public IViewComponentResult Invoke()
+        public async Task<IViewComponentResult> InvokeAsync()
         {
-            var model = _externalAuthenticationModelFactory.PrepareExternalMethodsModel();
+            var model = await _externalAuthenticationModelFactory.PrepareExternalMethodsModelAsync();
 
             return View(model);
         }

@@ -22,14 +22,17 @@
                 cache: false,
                 type: "GET",
                 url: "@(Url.Action("GetStatesByCountryId", "Country"))",
-                data: { "countryId": selectedItem, "addAsterisk": "true" },
-                success: function (data) {
+                data: {
+                    "countryId": selectedItem,
+                    "addAsterisk": "true"
+                },
+                success: function (data, textStatus, jqXHR) {
                     ddlStates.html('');
                     $.each(data, function (id, option) {
                         ddlStates.append($('<option></option>').val(option.id).html(option.name));
                     });
                 },
-                error: function (xhr, ajaxOptions, thrownError) {
+                error: function (jqXHR, textStatus, errorThrown) {
                     $("#getStatesByCountryIdAlert").click();
                 }
             });
@@ -37,10 +40,10 @@
     });
 </script>
 
-<div class="panel-group">
-    <div class="panel panel-default panel-popup">
-        <div class="panel-body">
-            <div class="form-group" @(Model.AvailableStores.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null)>
+<div class="cards-group">
+    <div class="card card-default card-popup">
+        <div class="card-body">
+            <div class="form-group row" @(Model.AvailableStores.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null)>
                 <div class="col-sm-3">
                     <nop-label asp-for="StoreId" />
                 </div>
@@ -49,7 +52,7 @@
                     <span asp-validation-for="StoreId"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="WarehouseId" />
                 </div>
@@ -58,7 +61,7 @@
                     <span asp-validation-for="WarehouseId"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="CountryId" />
                 </div>
@@ -67,7 +70,7 @@
                     <span asp-validation-for="CountryId"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="StateProvinceId" />
                 </div>
@@ -76,7 +79,7 @@
                     <span asp-validation-for="StateProvinceId"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="Zip" />
                 </div>
@@ -85,7 +88,7 @@
                     <span asp-validation-for="Zip"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="ShippingMethodId" />
                 </div>
@@ -94,7 +97,7 @@
                     <span asp-validation-for="ShippingMethodId"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="WeightFrom" />
                 </div>
@@ -103,7 +106,7 @@
                     <span asp-validation-for="WeightFrom"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="WeightTo" />
                 </div>
@@ -113,7 +116,7 @@
                 </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="OrderSubtotalFrom" />
                 </div>
@@ -122,7 +125,7 @@
                     <span asp-validation-for="OrderSubtotalFrom"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="OrderSubtotalTo" />
                 </div>
@@ -132,7 +135,7 @@
                 </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="AdditionalFixedCost" />
                 </div>
@@ -141,7 +144,7 @@
                     <span asp-validation-for="AdditionalFixedCost"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="LowerWeightLimit" />
                 </div>
@@ -150,7 +153,7 @@
                     <span asp-validation-for="LowerWeightLimit"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="RatePerWeightUnit" />
                 </div>
@@ -159,13 +162,22 @@
                     <span asp-validation-for="RatePerWeightUnit"></span>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group row">
                 <div class="col-sm-3">
                     <nop-label asp-for="PercentageRateOfSubtotal" />
                 </div>
                 <div class="col-sm-9">
                     <nop-editor asp-for="PercentageRateOfSubtotal" />
                     <span asp-validation-for="PercentageRateOfSubtotal"></span>
+                </div>
+            </div>
+            <div class="form-group row">
+                <div class="col-sm-3">
+                    <nop-label asp-for="TransitDays" />
+                </div>
+                <div class="col-sm-9">
+                    <nop-editor asp-for="TransitDays" />
+                    <span asp-validation-for="TransitDays"></span>
                 </div>
             </div>
         </div>

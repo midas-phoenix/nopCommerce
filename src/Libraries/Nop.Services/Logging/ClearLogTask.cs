@@ -17,7 +17,7 @@ namespace Nop.Services.Logging
 
         public ClearLogTask(ILogger logger)
         {
-            this._logger = logger;
+            _logger = logger;
         }
 
         #endregion
@@ -27,9 +27,9 @@ namespace Nop.Services.Logging
         /// <summary>
         /// Executes a task
         /// </summary>
-        public virtual void Execute()
+        public virtual async System.Threading.Tasks.Task ExecuteAsync()
         {
-            _logger.ClearLog();
+            await _logger.ClearLogAsync();
         }
 
         #endregion

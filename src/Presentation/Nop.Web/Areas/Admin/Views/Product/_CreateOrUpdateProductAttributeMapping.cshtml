@@ -1,29 +1,34 @@
 ﻿@model ProductAttributeMappingModel
 
-@inject IEventPublisher eventPublisher
+@{
+    const string hideInfoBlockAttributeName = "ProductAttributeMappingPage.HideCommonBlock";
+    var hideInfoBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideInfoBlockAttributeName);
+
+    const string hideValuesBlockAttributeName = "ProductAttributeMappingPage.HideValuesBlock";
+    var hideValuesBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideValuesBlockAttributeName);
+
+    const string hideConditionBlockAttributeName = "ProductAttributeMappingPage.HideConditionBlock";
+    var hideConditionBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideConditionBlockAttributeName);
+}
 
 <div asp-validation-summary="All"></div>
 <input asp-for="Id" type="hidden" />
 
-<div class="content">
-    <div class="form-horizontal">
-        <nop-tabs id="product-attribute-mapping-edit">
-            <nop-tab asp-name="tab-info" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Info")" asp-default="true">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Info", Model)</nop-tab>
-            <nop-tab asp-name="tab-values" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Values")">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Values", Model)</nop-tab>
-            @if (Model.ConditionAllowed)
-            {
-                <nop-tab asp-name="tab-condition" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Condition")">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Condition", Model)</nop-tab>
-            }
-        </nop-tabs>
-    </div>
-</div>
+ <section class="content">
+     <div class="container-fluid">
+        <div class="form-horizontal">
+        
+            <nop-cards id="product-attribute-mapping-cards">
+                <nop-card asp-name="product-attribute-mapping-info" asp-icon="fa fa-info" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Info")" asp-hide-block-attribute-name="@hideInfoBlockAttributeName" asp-hide="@hideInfoBlock" asp-advanced="false">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Info", Model)</nop-card>
+                <nop-card asp-name="product-attribute-mapping-values" asp-icon="fa fa-check-square-o" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Values")" asp-hide-block-attribute-name="@hideValuesBlockAttributeName" asp-hide="@hideValuesBlock" asp-advanced="false">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Values", Model)</nop-card>
 
-@{
-    //custom tabs
-    var eventMessage = new AdminTabStripCreated(this.Html, "product-attribute-mapping-edit");
-    eventPublisher.Publish(eventMessage);
-    foreach (var eventBlock in eventMessage.BlocksToRender)
-    {
-        @eventBlock
-    }
-}
+                @if (Model.ConditionAllowed)
+                {
+                    <nop-card asp-name="product-attribute-mapping-condition" asp-icon="fa fa-arrow-right" asp-title="@T("Admin.Catalog.Products.ProductAttributes.Attributes.Condition")" asp-hide-block-attribute-name="@hideConditionBlockAttributeName" asp-hide="@hideConditionBlock" asp-advanced="false">@await Html.PartialAsync("_CreateOrUpdateProductAttributeMapping.Condition", Model)</nop-card>
+                }
+
+                @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.ProductAttributeMappingDetailsBlock, additionalData = Model })
+            </nop-cards>
+        </div>
+    </div>
+</section>

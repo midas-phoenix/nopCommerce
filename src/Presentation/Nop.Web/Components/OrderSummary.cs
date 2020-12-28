@@ -1,4 +1,4 @@
-﻿using System.Linq;
+﻿using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Orders;
@@ -21,23 +21,23 @@ namespace Nop.Web.Components
             IStoreContext storeContext,
             IWorkContext workContext)
         {
-            this._shoppingCartModelFactory = shoppingCartModelFactory;
-            this._shoppingCartService = shoppingCartService;
-            this._storeContext = storeContext;
-            this._workContext = workContext;
+            _shoppingCartModelFactory = shoppingCartModelFactory;
+            _shoppingCartService = shoppingCartService;
+            _storeContext = storeContext;
+            _workContext = workContext;
         }
 
-        public IViewComponentResult Invoke(bool? prepareAndDisplayOrderReviewData, ShoppingCartModel overriddenModel)
+        public async Task<IViewComponentResult> InvokeAsync(bool? prepareAndDisplayOrderReviewData, ShoppingCartModel overriddenModel)
         {
             //use already prepared (shared) model
             if (overriddenModel != null)
                 return View(overriddenModel);
 
             //if not passed, then create a new model
-            var cart = _shoppingCartService.GetShoppingCart(_workContext.CurrentCustomer, ShoppingCartType.ShoppingCart, _storeContext.CurrentStore.Id);
+            var cart = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.ShoppingCart, (await _storeContext.GetCurrentStoreAsync()).Id);
 
             var model = new ShoppingCartModel();
-            model = _shoppingCartModelFactory.PrepareShoppingCartModel(model, cart,
+            model = await _shoppingCartModelFactory.PrepareShoppingCartModelAsync(model, cart,
                 isEditable: false,
                 prepareAndDisplayOrderReviewData: prepareAndDisplayOrderReviewData.GetValueOrDefault());
             return View(model);

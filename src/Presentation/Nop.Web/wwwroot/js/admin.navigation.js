@@ -4,10 +4,10 @@ Admin.Navigation = (function () {
     var buildMap = function () {
         var map = {};
 
-        var linkElements = $("a.menu-item-link");
+        var linkElements = $("a.nav-link");
 
         linkElements.each(function () {
-            var parents = $(this).parentsUntil(".sidebar-menu");
+            var parents = $(this).parentsUntil(".nav-sidebar");
             var href;
             var title;
             var parent;
@@ -17,7 +17,7 @@ Admin.Navigation = (function () {
                 case 1:
                     {
                         href = $(parents).find("a").attr("href");
-                        title = $(parents).find("a").find("span").html();
+                        title = $(parents).find("a").find("p").html();
                         map[href] = { title: title, link: href, parent: null, grandParent: null };
 
                         break;
@@ -26,8 +26,9 @@ Admin.Navigation = (function () {
                 case 3:
                     {
                         href = $(parents).eq(0).find("a").attr("href");
-                        title = $(parents).eq(0).find("a").find("span").html();
-                        parent = $(parents).eq(2).find("a").find("span").html();
+                        title = $(parents).eq(0).find("a").find("p").html();
+                        parent = $(parents).eq(2).find("a").find("p").html();
+                        parent = parent.substring(0, parent.indexOf("<i class"));
                         map[href] = { title: title, link: href, parent: parent, grandParent: null };
 
                         break;
@@ -36,9 +37,11 @@ Admin.Navigation = (function () {
                 case 5:
                     {
                         href = $(parents).eq(0).find("a").attr("href");
-                        title = $(parents).eq(0).find("a").find("span").html();
-                        parent = $(parents).eq(2).find("a").find("span").html();
-                        grandParent = $(parents).eq(4).find("a").find("span").html();
+                        title = $(parents).eq(0).find("a").find("p").html();
+                        parent = $(parents).eq(2).find("a").find("p").html();
+                        parent = parent.substring(0, parent.indexOf("<i class"));
+                        grandParent = $(parents).eq(4).find("a").find("p").html();
+                        grandParent = grandParent.substring(0, grandParent.indexOf("<i class"));
                         map[href] = { title: title, link: href, parent: parent, grandParent: grandParent };
                         break;
                     }
@@ -55,10 +58,12 @@ Admin.Navigation = (function () {
         map = buildMap();
         $.ajax({
             cache: false,
-            url: rootAppPath+'admin/plugin/SearchList',
-            type: 'get',
-            async:false,
-            success: function (res) { result = res;}
+            url: rootAppPath + 'Admin/Plugin/AdminNavigationPlugins',
+            type: "GET",
+            async: false,
+            success: function (data, textStatus, jqXHR) {
+              result = data;
+            }
         });
 
         for (i = 0; i < result.length; i++) {

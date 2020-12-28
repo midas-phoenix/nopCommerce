@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Services.Common;
@@ -19,8 +20,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         public PreferencesController(IGenericAttributeService genericAttributeService,
             IWorkContext workContext)
         {
-            this._genericAttributeService = genericAttributeService;
-            this._workContext = workContext;
+            _genericAttributeService = genericAttributeService;
+            _workContext = workContext;
         }
 
         #endregion
@@ -28,13 +29,13 @@ namespace Nop.Web.Areas.Admin.Controllers
         #region Methods
 
         [HttpPost]
-        public virtual IActionResult SavePreference(string name, bool value)
+        public virtual async Task<IActionResult> SavePreference(string name, bool value)
         {
             //permission validation is not required here
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
 
-            _genericAttributeService.SaveAttribute(_workContext.CurrentCustomer, name, value);
+            await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(), name, value);
 
             return Json(new
             {

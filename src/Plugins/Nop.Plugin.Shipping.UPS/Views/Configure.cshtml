@@ -1,11 +1,13 @@
-﻿@{
+﻿@model UPSShippingModel
+
+@using Nop.Plugin.Shipping.UPS.Domain
+@using Nop.Plugin.Shipping.UPS.Models
+
+@{
     Layout = "_ConfigurePlugin";
 }
 
-@model Nop.Plugin.Shipping.UPS.Models.UPSShippingModel
-@using Nop.Plugin.Shipping.UPS;
-
-<form asp-controller="ShippingUPS" asp-action="Configure" method="post">
+<form asp-controller="UPSShipping" asp-action="Configure" method="post">
     <script>
         $(document).ready(function () {
             $("#PackingType").change(togglePackingType);
@@ -14,34 +16,34 @@
 
         function togglePackingType() {
             var selectedPackingTypeId = $("#PackingType").val();
-            if (selectedPackingTypeId == @(((int)PackingType.PackByDimensions).ToString())) {
-                $('#pnlPassDimensions').show();
+            if (selectedPackingTypeId == @((int)PackingType.PackByDimensions)) {
+                $('#pnlPassDimensions').showField();
                 $('#pnlPackingPackageVolume').hide();
             }
-            else if (selectedPackingTypeId == @(((int)PackingType.PackByOneItemPerPackage).ToString())) {
+            else if (selectedPackingTypeId == @((int)PackingType.PackByOneItemPerPackage)) {
                 $('#pnlPassDimensions').hide();
                 $('#pnlPackingPackageVolume').hide();
             }
-            else if (selectedPackingTypeId == @(((int)PackingType.PackByVolume).ToString())) {
+            else if (selectedPackingTypeId == @((int)PackingType.PackByVolume)) {
                 $('#pnlPassDimensions').hide();
-                $('#pnlPackingPackageVolume').show();
+                $('#pnlPackingPackageVolume').showField();
             }
         }
     </script>
 
-    <div class="panel-group">
-        <div class="panel panel-default">
-            <div class="panel-body">
-                <div class="form-group">
+    <div class="cards-group">
+        <div class="card card-default">
+            <div class="card-body">
+                <div class="form-group row">
                     <div class="col-md-3">
-                        <nop-label asp-for="Url" />
+                        <nop-label asp-for="UseSandbox" />
                     </div>
                     <div class="col-md-9">
-                        <nop-editor asp-for="Url" />
-                        <span asp-validation-for="Url"></span>
+                        <nop-editor asp-for="UseSandbox" />
+                        <span asp-validation-for="UseSandbox"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AccountNumber" />
                     </div>
@@ -50,7 +52,7 @@
                         <span asp-validation-for="AccountNumber"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AccessKey" />
                     </div>
@@ -59,7 +61,7 @@
                         <span asp-validation-for="AccessKey"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="Username" />
                     </div>
@@ -68,7 +70,7 @@
                         <span asp-validation-for="Username"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="Password" />
                     </div>
@@ -77,7 +79,7 @@
                         <span asp-validation-for="Password"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="CustomerClassification" />
                     </div>
@@ -86,7 +88,7 @@
                         <span asp-validation-for="CustomerClassification"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="PickupType" />
                     </div>
@@ -95,7 +97,7 @@
                         <span asp-validation-for="PickupType"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="PackagingType" />
                     </div>
@@ -104,7 +106,7 @@
                         <span asp-validation-for="PackagingType"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="InsurePackage" />
                     </div>
@@ -113,7 +115,7 @@
                         <span asp-validation-for="InsurePackage"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AdditionalHandlingCharge" />
                     </div>
@@ -122,31 +124,41 @@
                         <span asp-validation-for="AdditionalHandlingCharge"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AvailableCarrierServices" />
                     </div>
                     <div class="col-md-9">
-                        @foreach (var csd in Model.AvailableCarrierServices)
+                        @foreach (var service in Model.AvailableCarrierServices)
                         {
-                            <div class="checkbox">
-                                <label>
-                                    <input type="checkbox" name="CheckedCarrierServices" value="@(csd)" checked="@Model.CarrierServicesOffered.Contains(csd)" />
-                                    @csd
+                            <div class="form-check">
+                                <label class="form-check-label">
+                                    <input class="form-check-input" type="checkbox" name="@(nameof(Model.CarrierServices))" value="@(service.Value)" checked="@(service.Selected)" />
+                                    @(service.Text)
                                 </label>
                             </div>
                         }
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
-                        <nop-label asp-for="PackingTypeValues" />
+                        <nop-label asp-for="SaturdayDeliveryEnabled" />
                     </div>
                     <div class="col-md-9">
-                        <nop-select asp-for="PackingType" asp-items="Model.PackingTypeValues" />
+                        <nop-editor asp-for="SaturdayDeliveryEnabled" />
+                        <span asp-validation-for="SaturdayDeliveryEnabled"></span>
                     </div>
                 </div>
-                <div class="form-group" id="pnlPassDimensions">
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <nop-label asp-for="PackingType" />
+                    </div>
+                    <div class="col-md-9">
+                        <nop-select asp-for="PackingType" asp-items="Model.AvaliablePackingTypes" />
+                        <span asp-validation-for="PackingType"></span>
+                    </div>
+                </div>
+                <div class="form-group row" id="pnlPassDimensions">
                     <div class="col-md-3">
                         <nop-label asp-for="PassDimensions" />
                     </div>
@@ -155,7 +167,7 @@
                         <span asp-validation-for="PassDimensions"></span>
                     </div>
                 </div>
-                <div class="form-group" id="pnlPackingPackageVolume">
+                <div class="form-group row" id="pnlPackingPackageVolume">
                     <div class="col-md-3">
                         <nop-label asp-for="PackingPackageVolume" />
                     </div>
@@ -164,7 +176,25 @@
                         <span asp-validation-for="PackingPackageVolume"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <nop-label asp-for="WeightType" />
+                    </div>
+                    <div class="col-md-9">
+                        <nop-select asp-for="WeightType" asp-items="Model.AvaliableWeightTypes" />
+                        <span asp-validation-for="WeightType"></span>
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <nop-label asp-for="DimensionsType" />
+                    </div>
+                    <div class="col-md-9">
+                        <nop-select asp-for="DimensionsType" asp-items="Model.AvaliableDimensionsTypes" />
+                        <span asp-validation-for="DimensionsType"></span>
+                    </div>
+                </div>
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="Tracing" />
                     </div>
@@ -173,9 +203,9 @@
                         <span asp-validation-for="Tracing"></span>
                     </div>
                 </div>
-                <div class="form-group">
-                    <div class="col-md-9 col-md-offset-3">
-                        <input type="submit" name="save" class="btn bg-blue" value="@T("Admin.Common.Save")" />
+                <div class="form-group row">
+                    <div class="col-md-9 offset-md-3">
+                        <input type="submit" name="save" class="btn btn-primary" value="@T("Admin.Common.Save")" />
                     </div>
                 </div>
             </div>

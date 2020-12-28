@@ -16,9 +16,8 @@ namespace Nop.Core.Infrastructure
     {
         #region Fields
 
-        protected INopFileProvider _fileProvider;
-
         private bool _ignoreReflectionErrors = true;
+        protected INopFileProvider _fileProvider;
 
         #endregion
 
@@ -26,7 +25,7 @@ namespace Nop.Core.Infrastructure
 
         public AppDomainTypeFinder(INopFileProvider fileProvider = null)
         {
-            this._fileProvider = fileProvider ?? CommonHelper.DefaultFileProvider;
+            _fileProvider = fileProvider ?? CommonHelper.DefaultFileProvider;
         }
 
         #endregion
@@ -80,7 +79,7 @@ namespace Nop.Core.Infrastructure
         /// <returns>
         /// True if the assembly should be loaded into Nop.
         /// </returns>
-        public virtual bool Matches(string assemblyFullName)
+        protected virtual bool Matches(string assemblyFullName)
         {
             return !Matches(assemblyFullName, AssemblySkipLoadingPattern)
                    && Matches(assemblyFullName, AssemblyRestrictToLoadingPattern);
@@ -163,8 +162,8 @@ namespace Nop.Core.Infrastructure
                     if (!implementedInterface.IsGenericType)
                         continue;
 
-                    var isMatch = genericTypeDefinition.IsAssignableFrom(implementedInterface.GetGenericTypeDefinition());
-                    return isMatch;
+                    if (genericTypeDefinition.IsAssignableFrom(implementedInterface.GetGenericTypeDefinition()))
+                        return true;
                 }
 
                 return false;
@@ -175,45 +174,6 @@ namespace Nop.Core.Infrastructure
             }
         }
 
-        #endregion
-
-        #region Methods
-
-        /// <summary>
-        /// Find classes of type
-        /// </summary>
-        /// <typeparam name="T">Type</typeparam>
-        /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
-        /// <returns>Result</returns>
-        public IEnumerable<Type> FindClassesOfType<T>(bool onlyConcreteClasses = true)
-        {
-            return FindClassesOfType(typeof(T), onlyConcreteClasses);
-        }
-
-        /// <summary>
-        /// Find classes of type
-        /// </summary>
-        /// <param name="assignTypeFrom">Assign type from</param>
-        /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
-        /// <returns>Result</returns>
-        /// <returns></returns>
-        public IEnumerable<Type> FindClassesOfType(Type assignTypeFrom, bool onlyConcreteClasses = true)
-        {
-            return FindClassesOfType(assignTypeFrom, GetAssemblies(), onlyConcreteClasses);
-        }
-
-        /// <summary>
-        /// Find classes of type
-        /// </summary>
-        /// <typeparam name="T">Type</typeparam>
-        /// <param name="assemblies">Assemblies</param>
-        /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
-        /// <returns>Result</returns>
-        public IEnumerable<Type> FindClassesOfType<T>(IEnumerable<Assembly> assemblies, bool onlyConcreteClasses = true)
-        {
-            return FindClassesOfType(typeof(T), assemblies, onlyConcreteClasses);
-        }
-
         /// <summary>
         /// Find classes of type
         /// </summary>
@@ -221,7 +181,7 @@ namespace Nop.Core.Infrastructure
         /// <param name="assemblies">Assemblies</param>
         /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
         /// <returns>Result</returns>
-        public IEnumerable<Type> FindClassesOfType(Type assignTypeFrom, IEnumerable<Assembly> assemblies, bool onlyConcreteClasses = true)
+        protected virtual IEnumerable<Type> FindClassesOfType(Type assignTypeFrom, IEnumerable<Assembly> assemblies, bool onlyConcreteClasses = true)
         {
             var result = new List<Type>();
             try
@@ -281,7 +241,34 @@ namespace Nop.Core.Infrastructure
 
             return result;
         }
+        
+        #endregion
 
+        #region Methods
+
+        /// <summary>
+        /// Find classes of type
+        /// </summary>
+        /// <typeparam name="T">Type</typeparam>
+        /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
+        /// <returns>Result</returns>
+        public IEnumerable<Type> FindClassesOfType<T>(bool onlyConcreteClasses = true)
+        {
+            return FindClassesOfType(typeof(T), onlyConcreteClasses);
+        }
+
+        /// <summary>
+        /// Find classes of type
+        /// </summary>
+        /// <param name="assignTypeFrom">Assign type from</param>
+        /// <param name="onlyConcreteClasses">A value indicating whether to find only concrete classes</param>
+        /// <returns>Result</returns>
+        /// <returns></returns>
+        public IEnumerable<Type> FindClassesOfType(Type assignTypeFrom, bool onlyConcreteClasses = true)
+        {
+            return FindClassesOfType(assignTypeFrom, GetAssemblies(), onlyConcreteClasses);
+        }
+        
         /// <summary>
         /// Gets the assemblies related to the current implementation.
         /// </summary>

@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Nop.Core.Data;
+using Nop.Data;
 using Nop.Services.Security;
 
 namespace Nop.Web.Framework.Mvc.Filters
@@ -10,14 +11,8 @@ namespace Nop.Web.Framework.Mvc.Filters
     /// <summary>
     /// Represents a filter attribute that confirms access to public store
     /// </summary>
-    public class CheckAccessPublicStoreAttribute : TypeFilterAttribute
+    public sealed class CheckAccessPublicStoreAttribute : TypeFilterAttribute
     {
-        #region Fields
-
-        private readonly bool _ignoreFilter;
-
-        #endregion
-
         #region Ctor
 
         /// <summary>
@@ -26,8 +21,8 @@ namespace Nop.Web.Framework.Mvc.Filters
         /// <param name="ignore">Whether to ignore the execution of filter actions</param>
         public CheckAccessPublicStoreAttribute(bool ignore = false) : base(typeof(CheckAccessPublicStoreFilter))
         {
-            this._ignoreFilter = ignore;
-            this.Arguments = new object[] { ignore };
+            IgnoreFilter = ignore;
+            Arguments = new object[] { ignore };
         }
 
         #endregion
@@ -37,7 +32,7 @@ namespace Nop.Web.Framework.Mvc.Filters
         /// <summary>
         /// Gets a value indicating whether to ignore the execution of filter actions
         /// </summary>
-        public bool IgnoreFilter => _ignoreFilter;
+        public bool IgnoreFilter { get; }
 
         #endregion
 
@@ -46,7 +41,7 @@ namespace Nop.Web.Framework.Mvc.Filters
         /// <summary>
         /// Represents a filter that confirms access to public store
         /// </summary>
-        private class CheckAccessPublicStoreFilter : IAuthorizationFilter
+        private class CheckAccessPublicStoreFilter : IAsyncAuthorizationFilter
         {
             #region Fields
 
@@ -59,8 +54,44 @@ namespace Nop.Web.Framework.Mvc.Filters
 
             public CheckAccessPublicStoreFilter(bool ignoreFilter, IPermissionService permissionService)
             {
-                this._ignoreFilter = ignoreFilter;
-                this._permissionService = permissionService;
+                _ignoreFilter = ignoreFilter;
+                _permissionService = permissionService;
+            }
+
+            #endregion
+
+            #region Utilities
+
+            /// <summary>
+            /// Called early in the filter pipeline to confirm request is authorized
+            /// </summary>
+            /// <param name="context">Authorization filter context</param>
+            /// <returns>A task that on completion indicates the filter has executed</returns>
+            private async Task CheckAccessPublicStoreAsync(AuthorizationFilterContext context)
+            {
+                if (context == null)
+                    throw new ArgumentNullException(nameof(context));
+
+                //check whether this filter has been overridden for the Action
+                var actionFilter = context.ActionDescriptor.FilterDescriptors
+                    .Where(filterDescriptor => filterDescriptor.Scope == FilterScope.Action)
+                    .Select(filterDescriptor => filterDescriptor.Filter)
+                    .OfType<CheckAccessPublicStoreAttribute>()
+                    .FirstOrDefault();
+
+                //ignore filter (the action is available even if navigation is not allowed)
+                if (actionFilter?.IgnoreFilter ?? _ignoreFilter)
+                    return;
+
+                if (!await DataSettingsManager.IsDatabaseInstalledAsync())
+                    return;
+
+                //check whether current customer has access to a public store
+                if (await _permissionService.AuthorizeAsync(StandardPermissionProvider.PublicStoreAllowNavigation))
+                    return;
+
+                //customer hasn't access to a public store
+                context.Result = new ChallengeResult();
             }
 
             #endregion
@@ -70,30 +101,11 @@ namespace Nop.Web.Framework.Mvc.Filters
             /// <summary>
             /// Called early in the filter pipeline to confirm request is authorized
             /// </summary>
-            /// <param name="filterContext">Authorization filter context</param>
-            public void OnAuthorization(AuthorizationFilterContext filterContext)
+            /// <param name="context">Authorization filter context</param>
+            /// <returns>A task that on completion indicates the filter has executed</returns>
+            public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
             {
-                if (filterContext == null)
-                    throw new ArgumentNullException(nameof(filterContext));
-
-                //check whether this filter has been overridden for the Action
-                var actionFilter = filterContext.ActionDescriptor.FilterDescriptors
-                    .Where(filterDescriptor => filterDescriptor.Scope == FilterScope.Action)
-                    .Select(filterDescriptor => filterDescriptor.Filter).OfType<CheckAccessPublicStoreAttribute>().FirstOrDefault();
-
-                //ignore filter (the action is available even if navigation is not allowed)
-                if (actionFilter?.IgnoreFilter ?? _ignoreFilter)
-                    return;
-
-                if (!DataSettingsManager.DatabaseIsInstalled)
-                    return;
-
-                //check whether current customer has access to a public store
-                if (_permissionService.Authorize(StandardPermissionProvider.PublicStoreAllowNavigation))
-                    return;
-
-                //customer hasn't access to a public store
-                filterContext.Result = new ChallengeResult();
+                await CheckAccessPublicStoreAsync(context);
             }
 
             #endregion

@@ -106,6 +106,11 @@ namespace Nop.Core.Domain.Catalog
         public bool ProductReviewsMustBeApproved { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating that customer can add only one review per product
+        /// </summary>
+        public bool OneReviewPerProductFromCustomer { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating the default rating value of the product reviews
         /// </summary>
         public int DefaultProductRatingValue { get; set; }
@@ -194,6 +199,11 @@ namespace Nop.Core.Domain.Catalog
         /// Gets or sets a value indicating whether autocomplete is enabled
         /// </summary>
         public bool ProductSearchAutoCompleteEnabled { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the search box is displayed
+        /// </summary>
+        public bool ProductSearchEnabled { get; set; }
 
         /// <summary>
         /// Gets or sets a number of products to return when using "autocomplete" feature
@@ -459,5 +469,10 @@ namespace Nop.Core.Domain.Catalog
         /// Get or set a value indicating whether it's necessary to show the date for pre-order availability in a public store
         /// </summary>
         public bool DisplayDatePreOrderAvailability { get; set; }
+
+        /// <summary>
+        /// Get or set a value indicating whether use standart menu in public store or use Ajax to load menu
+        /// </summary>
+        public bool UseAjaxLoadMenu { get; set; }
     }
 }

@@ -1,7 +1,4 @@
-﻿using System.Net;
-using Nop.Core;
-using Nop.Core.Http;
-using Nop.Services.Tasks;
+﻿using Nop.Services.Tasks;
 
 namespace Nop.Services.Common
 {
@@ -12,15 +9,15 @@ namespace Nop.Services.Common
     {
         #region Fields
 
-        private readonly IWebHelper _webHelper;
+        private readonly StoreHttpClient _storeHttpClient;
 
         #endregion
 
         #region Ctor
 
-        public KeepAliveTask(IWebHelper webHelper)
+        public KeepAliveTask(StoreHttpClient storeHttpClient)
         {
-            this._webHelper = webHelper;
+            _storeHttpClient = storeHttpClient;
         }
 
         #endregion
@@ -30,13 +27,9 @@ namespace Nop.Services.Common
         /// <summary>
         /// Executes a task
         /// </summary>
-        public void Execute()
+        public async System.Threading.Tasks.Task ExecuteAsync()
         {
-            var keepAliveUrl = $"{_webHelper.GetStoreLocation()}{NopHttpDefaults.KeepAlivePath}";
-            using (var wc = new WebClient())
-            {
-                wc.DownloadString(keepAliveUrl);
-            }
+            await _storeHttpClient.KeepAliveAsync();
         }
 
         #endregion

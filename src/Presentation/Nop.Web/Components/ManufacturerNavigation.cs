@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.Catalog;
 using Nop.Web.Factories;
@@ -13,16 +14,16 @@ namespace Nop.Web.Components
 
         public ManufacturerNavigationViewComponent(CatalogSettings catalogSettings, ICatalogModelFactory catalogModelFactory)
         {
-            this._catalogSettings = catalogSettings;
-            this._catalogModelFactory = catalogModelFactory;
+            _catalogSettings = catalogSettings;
+            _catalogModelFactory = catalogModelFactory;
         }
 
-        public IViewComponentResult Invoke(int currentManufacturerId)
+        public async Task<IViewComponentResult> InvokeAsync(int currentManufacturerId)
         {
             if (_catalogSettings.ManufacturersBlockItemsToDisplay == 0)
                 return Content("");
 
-            var model = _catalogModelFactory.PrepareManufacturerNavigationModel(currentManufacturerId);
+            var model = await _catalogModelFactory.PrepareManufacturerNavigationModelAsync(currentManufacturerId);
             if (!model.Manufacturers.Any())
                 return Content("");
 

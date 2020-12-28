@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Security.AccessControl;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.Extensions.FileProviders;
 
 namespace Nop.Core.Infrastructure
@@ -17,7 +18,7 @@ namespace Nop.Core.Infrastructure
         /// <param name="paths">An array of parts of the path</param>
         /// <returns>The combined paths</returns>
         string Combine(params string[] paths);
-        
+
         /// <summary>
         /// Creates all directories and subdirectories in the specified path unless they already exist
         /// </summary>
@@ -252,6 +253,13 @@ namespace Nop.Core.Infrastructure
         string GetParentDirectory(string directoryPath);
 
         /// <summary>
+        /// Gets a virtual path from a physical disk path.
+        /// </summary>
+        /// <param name="path">The physical disk path</param>
+        /// <returns>The virtual path. E.g. "~/bin"</returns>
+        string GetVirtualPath(string path);
+
+        /// <summary>
         /// Checks if the path is directory
         /// </summary>
         /// <param name="path">Path for check</param>
@@ -264,13 +272,21 @@ namespace Nop.Core.Infrastructure
         /// <param name="path">The path to map. E.g. "~/bin"</param>
         /// <returns>The physical path. E.g. "c:\inetpub\wwwroot\bin"</returns>
         string MapPath(string path);
-        
+
         /// <summary>
         /// Reads the contents of the file into a byte array
         /// </summary>
         /// <param name="filePath">The file for reading</param>
         /// <returns>A byte array containing the contents of the file</returns>
-        byte[] ReadAllBytes(string filePath);
+        Task<byte[]> ReadAllBytesAsync(string filePath);
+
+        /// <summary>
+        /// Opens a file, reads all lines of the file with the specified encoding, and then closes the file.
+        /// </summary>
+        /// <param name="path">The file to open for reading</param>
+        /// <param name="encoding">The encoding applied to the contents of the file</param>
+        /// <returns>A string containing all lines of the file</returns>
+        Task<string> ReadAllTextAsync(string path, Encoding encoding);
 
         /// <summary>
         /// Opens a file, reads all lines of the file with the specified encoding, and then closes the file.
@@ -279,7 +295,8 @@ namespace Nop.Core.Infrastructure
         /// <param name="encoding">The encoding applied to the contents of the file</param>
         /// <returns>A string containing all lines of the file</returns>
         string ReadAllText(string path, Encoding encoding);
-        
+
+        //TODO: Delete unused method
         /// <summary>
         /// Sets the date and time, in coordinated universal time (UTC), that the specified file was last written to
         /// </summary>
@@ -289,13 +306,22 @@ namespace Nop.Core.Infrastructure
         /// This value is expressed in UTC time
         /// </param>
         void SetLastWriteTimeUtc(string path, DateTime lastWriteTimeUtc);
-        
+
         /// <summary>
         /// Writes the specified byte array to the file
         /// </summary>
         /// <param name="filePath">The file to write to</param>
         /// <param name="bytes">The bytes to write to the file</param>
-        void WriteAllBytes(string filePath, byte[] bytes);
+        Task WriteAllBytesAsync(string filePath, byte[] bytes);
+
+        /// <summary>
+        /// Creates a new file, writes the specified string to the file using the specified encoding,
+        /// and then closes the file. If the target file already exists, it is overwritten.
+        /// </summary>
+        /// <param name="path">The file to write to</param>
+        /// <param name="contents">The string to write to the file</param>
+        /// <param name="encoding">The encoding to apply to the string</param>
+        Task WriteAllTextAsync(string path, string contents, Encoding encoding);
 
         /// <summary>
         /// Creates a new file, writes the specified string to the file using the specified encoding,

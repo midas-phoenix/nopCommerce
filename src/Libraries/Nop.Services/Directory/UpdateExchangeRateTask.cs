@@ -21,8 +21,8 @@ namespace Nop.Services.Directory
         public UpdateExchangeRateTask(CurrencySettings currencySettings,
             ICurrencyService currencyService)
         {
-            this._currencySettings = currencySettings;
-            this._currencyService = currencyService;
+            _currencySettings = currencySettings;
+            _currencyService = currencyService;
         }
 
         #endregion
@@ -32,23 +32,21 @@ namespace Nop.Services.Directory
         /// <summary>
         /// Executes a task
         /// </summary>
-        public void Execute()
+        public async System.Threading.Tasks.Task ExecuteAsync()
         {
             if (!_currencySettings.AutoUpdateEnabled)
                 return;
 
-            var primaryCurrencyCode = _currencyService.GetCurrencyById(_currencySettings.PrimaryExchangeRateCurrencyId).CurrencyCode;
-            var exchangeRates = _currencyService.GetCurrencyLiveRates(primaryCurrencyCode);
-
-            foreach (var exchageRate in exchangeRates)
+            var exchangeRates = await _currencyService.GetCurrencyLiveRatesAsync();
+            foreach (var exchangeRate in exchangeRates)
             {
-                var currency = _currencyService.GetCurrencyByCode(exchageRate.CurrencyCode, false);
-                if (currency == null) 
+                var currency = await _currencyService.GetCurrencyByCodeAsync(exchangeRate.CurrencyCode);
+                if (currency == null)
                     continue;
 
-                currency.Rate = exchageRate.Rate;
+                currency.Rate = exchangeRate.Rate;
                 currency.UpdatedOnUtc = DateTime.UtcNow;
-                _currencyService.UpdateCurrency(currency);
+                await _currencyService.UpdateCurrencyAsync(currency);
             }
         }
 

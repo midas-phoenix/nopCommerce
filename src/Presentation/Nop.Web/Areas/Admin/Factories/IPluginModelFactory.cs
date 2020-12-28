@@ -1,5 +1,8 @@
-﻿using Nop.Core.Plugins;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
+using Nop.Services.Plugins;
 using Nop.Web.Areas.Admin.Models.Plugins;
+using Nop.Web.Areas.Admin.Models.Plugins.Marketplace;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -13,14 +16,14 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Plugin search model</param>
         /// <returns>Plugin search model</returns>
-        PluginSearchModel PreparePluginSearchModel(PluginSearchModel searchModel);
+        Task<PluginSearchModel> PreparePluginSearchModelAsync(PluginSearchModel searchModel);
 
         /// <summary>
         /// Prepare paged plugin list model
         /// </summary>
         /// <param name="searchModel">Plugin search model</param>
         /// <returns>Plugin list model</returns>
-        PluginListModel PreparePluginListModel(PluginSearchModel searchModel);
+        Task<PluginListModel> PreparePluginListModelAsync(PluginSearchModel searchModel);
 
         /// <summary>
         /// Prepare plugin model
@@ -29,27 +32,26 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="pluginDescriptor">Plugin descriptor</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Plugin model</returns>
-        PluginModel PreparePluginModel(PluginModel model, PluginDescriptor pluginDescriptor, bool excludeProperties = false);
+        Task<PluginModel> PreparePluginModelAsync(PluginModel model, PluginDescriptor pluginDescriptor, bool excludeProperties = false);
 
         /// <summary>
         /// Prepare search model of plugins of the official feed
         /// </summary>
         /// <param name="searchModel">Search model of plugins of the official feed</param>
         /// <returns>Search model of plugins of the official feed</returns>
-        OfficialFeedPluginSearchModel PrepareOfficialFeedPluginSearchModel(OfficialFeedPluginSearchModel searchModel);
+        Task<OfficialFeedPluginSearchModel> PrepareOfficialFeedPluginSearchModelAsync(OfficialFeedPluginSearchModel searchModel);
 
         /// <summary>
         /// Prepare paged list model of plugins of the official feed
         /// </summary>
         /// <param name="searchModel">Search model of plugins of the official feed</param>
         /// <returns>List model of plugins of the official feed</returns>
-        OfficialFeedPluginListModel PrepareOfficialFeedPluginListModel(OfficialFeedPluginSearchModel searchModel);
+        Task<OfficialFeedPluginListModel> PrepareOfficialFeedPluginListModelAsync(OfficialFeedPluginSearchModel searchModel);
 
         /// <summary>
-        /// Prepare plugins configuration model
+        /// Prepare plugin models for admin navigation
         /// </summary>
-        /// <param name="configModel">Plugins configuration model</param>
-        /// <returns>Plugins configuration model</returns>
-        PluginsConfigurationModel PreparePluginsConfigurationModel(PluginsConfigurationModel configModel);
+        /// <returns>List of models</returns>
+        Task<IList<AdminNavigationPluginModel>> PrepareAdminNavigationPluginModelsAsync();
     }
 }

@@ -1,18 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Text.Encodings.Web;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Razor;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Nop.Core;
 using Nop.Core.Infrastructure;
 using Nop.Services.Localization;
-using Nop.Web.Framework.Kendoui;
 using Nop.Web.Framework.Models;
 using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Framework.UI;
@@ -22,12 +22,14 @@ namespace Nop.Web.Framework.Controllers
     /// <summary>
     /// Base controller
     /// </summary>
+    [HttpsRequirement]
     [PublishModelEvents]
     [SignOutFromExternalAuthentication]
     [ValidatePassword]
     [SaveIpAddress]
     [SaveLastActivity]
     [SaveLastVisitedPage]
+    [ForceMultiFactorAuthentication]
     public abstract class BaseController : Controller
     {
         #region Rendering
@@ -38,106 +40,61 @@ namespace Nop.Web.Framework.Controllers
         /// <param name="componentName">Component name</param>
         /// <param name="arguments">Arguments</param>
         /// <returns>Result</returns>
-        protected virtual string RenderViewComponentToString(string componentName, object arguments = null)
+        protected virtual async Task<string> RenderViewComponentToStringAsync(string componentName, object arguments = null)
         {
             //original implementation: https://github.com/aspnet/Mvc/blob/dev/src/Microsoft.AspNetCore.Mvc.ViewFeatures/Internal/ViewComponentResultExecutor.cs
             //we customized it to allow running from controllers
 
-            //TODO add support for parameters (pass ViewComponent as input parameter)
             if (string.IsNullOrEmpty(componentName))
                 throw new ArgumentNullException(nameof(componentName));
 
-            var actionContextAccessor = HttpContext.RequestServices.GetService(typeof(IActionContextAccessor)) as IActionContextAccessor;
-            if (actionContextAccessor == null)
+            if (!(HttpContext.RequestServices.GetService(typeof(IActionContextAccessor)) is IActionContextAccessor actionContextAccessor))
                 throw new Exception("IActionContextAccessor cannot be resolved");
 
             var context = actionContextAccessor.ActionContext;
 
             var viewComponentResult = ViewComponent(componentName, arguments);
 
-            var viewData = this.ViewData;
+            var viewData = ViewData;
             if (viewData == null)
-            {
                 throw new NotImplementedException();
-                //TODO viewData = new ViewDataDictionary(_modelMetadataProvider, context.ModelState);
-            }
 
-            var tempData = this.TempData;
+            var tempData = TempData;
             if (tempData == null)
-            {
                 throw new NotImplementedException();
-                //TODO tempData = _tempDataDictionaryFactory.GetTempData(context.HttpContext);
-            }
 
-            using (var writer = new StringWriter())
-            {
-                var viewContext = new ViewContext(
-                    context,
-                    NullView.Instance,
-                    viewData,
-                    tempData,
-                    writer,
-                    new HtmlHelperOptions());
+            await using var writer = new StringWriter();
+            var viewContext = new ViewContext(context, NullView.Instance, viewData, tempData, writer, new HtmlHelperOptions());
 
-                // IViewComponentHelper is stateful, we want to make sure to retrieve it every time we need it.
-                var viewComponentHelper = context.HttpContext.RequestServices.GetRequiredService<IViewComponentHelper>();
-                (viewComponentHelper as IViewContextAware)?.Contextualize(viewContext);
+            // IViewComponentHelper is stateful, we want to make sure to retrieve it every time we need it.
+            var viewComponentHelper = context.HttpContext.RequestServices.GetRequiredService<IViewComponentHelper>();
+            (viewComponentHelper as IViewContextAware)?.Contextualize(viewContext);
 
-                var result = viewComponentResult.ViewComponentType == null ? 
-                    viewComponentHelper.InvokeAsync(viewComponentResult.ViewComponentName, viewComponentResult.Arguments):
-                    viewComponentHelper.InvokeAsync(viewComponentResult.ViewComponentType, viewComponentResult.Arguments);
+            var result = viewComponentResult.ViewComponentType == null ?
+                await viewComponentHelper.InvokeAsync(viewComponentResult.ViewComponentName, viewComponentResult.Arguments) :
+                await viewComponentHelper.InvokeAsync(viewComponentResult.ViewComponentType, viewComponentResult.Arguments);
 
-                result.Result.WriteTo(writer, HtmlEncoder.Default);
-                return writer.ToString();
-            }
+            result.WriteTo(writer, HtmlEncoder.Default);
+            return writer.ToString();
         }
-
-        /// <summary>
-        /// Render partial view to string
-        /// </summary>
-        /// <returns>Result</returns>
-        protected virtual string RenderPartialViewToString()
-        {
-            return RenderPartialViewToString(null, null);
-        }
-
-        /// <summary>
-        /// Render partial view to string
-        /// </summary>
-        /// <param name="viewName">View name</param>
-        /// <returns>Result</returns>
-        protected virtual string RenderPartialViewToString(string viewName)
-        {
-            return RenderPartialViewToString(viewName, null);
-        }
-
-        /// <summary>
-        /// Render partial view to string
-        /// </summary>
-        /// <param name="model">Model</param>
-        /// <returns>Result</returns>
-        protected virtual string RenderPartialViewToString(object model)
-        {
-            return RenderPartialViewToString(null, model);
-        }
-
+        
         /// <summary>
         /// Render partial view to string
         /// </summary>
         /// <param name="viewName">View name</param>
         /// <param name="model">Model</param>
         /// <returns>Result</returns>
-        protected virtual string RenderPartialViewToString(string viewName, object model)
+        protected virtual async Task<string> RenderPartialViewToStringAsync(string viewName, object model)
         {
             //get Razor view engine
             var razorViewEngine = EngineContext.Current.Resolve<IRazorViewEngine>();
 
             //create action context
-            var actionContext = new ActionContext(this.HttpContext, this.RouteData, this.ControllerContext.ActionDescriptor, this.ModelState);
+            var actionContext = new ActionContext(HttpContext, RouteData, ControllerContext.ActionDescriptor, ModelState);
 
             //set view name as action name in case if not passed
             if (string.IsNullOrEmpty(viewName))
-                viewName = this.ControllerContext.ActionDescriptor.ActionName;
+                viewName = ControllerContext.ActionDescriptor.ActionName;
 
             //set model
             ViewData.Model = model;
@@ -151,14 +108,11 @@ namespace Nop.Web.Framework.Controllers
                 if (viewResult.View == null)
                     throw new ArgumentNullException($"{viewName} view was not found");
             }
-            using (var stringWriter = new StringWriter())
-            {
-                var viewContext = new ViewContext(actionContext, viewResult.View, ViewData, TempData, stringWriter, new HtmlHelperOptions());
+            await using var stringWriter = new StringWriter();
+            var viewContext = new ViewContext(actionContext, viewResult.View, ViewData, TempData, stringWriter, new HtmlHelperOptions());
 
-                var t = viewResult.View.RenderAsync(viewContext);
-                t.Wait();
-                return stringWriter.GetStringBuilder().ToString();
-            }
+            await viewResult.View.RenderAsync(viewContext);
+            return stringWriter.GetStringBuilder().ToString();
         }
 
         #endregion
@@ -166,20 +120,30 @@ namespace Nop.Web.Framework.Controllers
         #region Notifications
 
         /// <summary>
-        /// Error's JSON data for kendo grid
+        /// Error's JSON data
         /// </summary>
-        /// <param name="errorMessage">Error message</param>
+        /// <param name="error">Error text</param>
         /// <returns>Error's JSON data</returns>
-        protected JsonResult ErrorForKendoGridJson(string errorMessage)
+        protected JsonResult ErrorJson(string error)
         {
-            var gridModel = new DataSourceResult
+            return Json(new
             {
-                Errors = errorMessage
-            };
-
-            return Json(gridModel);
+                error
+            });
         }
 
+        /// <summary>
+        /// Error's JSON data
+        /// </summary>
+        /// <param name="errors">Error messages</param>
+        /// <returns>Error's JSON data</returns>
+        protected JsonResult ErrorJson(object errors)
+        {
+            return Json(new
+            {
+                error = errors
+            });
+        }
         /// <summary>
         /// Display "Edit" (manage) link (in public store)
         /// </summary>
@@ -201,10 +165,10 @@ namespace Nop.Web.Framework.Controllers
         /// <typeparam name="TLocalizedModelLocal">Localizable model</typeparam>
         /// <param name="languageService">Language service</param>
         /// <param name="locales">Locales</param>
-        protected virtual void AddLocales<TLocalizedModelLocal>(ILanguageService languageService, 
+        protected virtual async Task AddLocalesAsync<TLocalizedModelLocal>(ILanguageService languageService,
             IList<TLocalizedModelLocal> locales) where TLocalizedModelLocal : ILocalizedLocaleModel
         {
-            AddLocales(languageService, locales, null);
+            await AddLocalesAsync(languageService, locales, null);
         }
 
         /// <summary>
@@ -214,10 +178,10 @@ namespace Nop.Web.Framework.Controllers
         /// <param name="languageService">Language service</param>
         /// <param name="locales">Locales</param>
         /// <param name="configure">Configure action</param>
-        protected virtual void AddLocales<TLocalizedModelLocal>(ILanguageService languageService, 
+        protected virtual async Task AddLocalesAsync<TLocalizedModelLocal>(ILanguageService languageService,
             IList<TLocalizedModelLocal> locales, Action<TLocalizedModelLocal, int> configure) where TLocalizedModelLocal : ILocalizedLocaleModel
         {
-            foreach (var language in languageService.GetAllLanguages(true))
+            foreach (var language in await languageService.GetAllLanguagesAsync(true))
             {
                 var locale = Activator.CreateInstance<TLocalizedModelLocal>();
                 locale.LanguageId = language.Id;
@@ -243,19 +207,124 @@ namespace Nop.Web.Framework.Controllers
             var webHelper = EngineContext.Current.Resolve<IWebHelper>();
 
             //return Challenge();
-            return RedirectToAction("AccessDenied", "Security", new { pageUrl = webHelper.GetRawUrl(this.Request) });
+            return RedirectToAction("AccessDenied", "Security", new { pageUrl = webHelper.GetRawUrl(Request) });
         }
 
         /// <summary>
-        /// Access denied JSON data for kendo grid
+        /// Access denied JSON data for DataTables
         /// </summary>
         /// <returns>Access denied JSON data</returns>
-        protected JsonResult AccessDeniedKendoGridJson()
+        protected async Task<JsonResult> AccessDeniedDataTablesJson()
         {
             var localizationService = EngineContext.Current.Resolve<ILocalizationService>();
-            return ErrorForKendoGridJson(localizationService.GetResource("Admin.AccessDenied.Description"));
+
+            return ErrorJson(await localizationService.GetResourceAsync("Admin.AccessDenied.Description"));
         }
-        
+
+        #endregion
+
+        #region Cards and tabs
+
+        /// <summary>
+        /// Save selected card name
+        /// </summary>
+        /// <param name="cardName">Card name to save</param>
+        /// <param name="persistForTheNextRequest">A value indicating whether a message should be persisted for the next request. Pass null to ignore</param>
+        public virtual void SaveSelectedCardName(string cardName, bool persistForTheNextRequest = true)
+        {
+            //keep this method synchronized with
+            //"GetSelectedCardName" method of \Nop.Web.Framework\Extensions\HtmlExtensions.cs
+            if (string.IsNullOrEmpty(cardName))
+                throw new ArgumentNullException(nameof(cardName));
+
+            const string dataKey = "nop.selected-card-name";
+            if (persistForTheNextRequest)
+            {
+                TempData[dataKey] = cardName;
+            }
+            else
+            {
+                ViewData[dataKey] = cardName;
+            }
+        }
+
+        /// <summary>
+        /// Save selected tab name
+        /// </summary>
+        /// <param name="tabName">Tab name to save; empty to automatically detect it</param>
+        /// <param name="persistForTheNextRequest">A value indicating whether a message should be persisted for the next request. Pass null to ignore</param>
+        public virtual void SaveSelectedTabName(string tabName = "", bool persistForTheNextRequest = true)
+        {
+            //default root tab
+            SaveSelectedTabName(tabName, "selected-tab-name", null, persistForTheNextRequest);
+            //child tabs (usually used for localization)
+            //Form is available for POST only
+            if (!Request.Method.Equals(WebRequestMethods.Http.Post, StringComparison.InvariantCultureIgnoreCase))
+                return;
+
+            foreach (var key in Request.Form.Keys)
+                if (key.StartsWith("selected-tab-name-", StringComparison.InvariantCultureIgnoreCase))
+                    SaveSelectedTabName(null, key, key["selected-tab-name-".Length..], persistForTheNextRequest);
+        }
+
+        /// <summary>
+        /// Save selected tab name
+        /// </summary>
+        /// <param name="tabName">Tab name to save; empty to automatically detect it</param>
+        /// <param name="persistForTheNextRequest">A value indicating whether a message should be persisted for the next request. Pass null to ignore</param>
+        /// <param name="formKey">Form key where selected tab name is stored</param>
+        /// <param name="dataKeyPrefix">A prefix for child tab to process</param>
+        protected virtual void SaveSelectedTabName(string tabName, string formKey, string dataKeyPrefix, bool persistForTheNextRequest)
+        {
+            //keep this method synchronized with
+            //"GetSelectedTabName" method of \Nop.Web.Framework\Extensions\HtmlExtensions.cs
+            if (string.IsNullOrEmpty(tabName))
+            {
+                tabName = Request.Form[formKey];
+            }
+
+            if (string.IsNullOrEmpty(tabName))
+                return;
+
+            var dataKey = "nop.selected-tab-name";
+            if (!string.IsNullOrEmpty(dataKeyPrefix))
+                dataKey += $"-{dataKeyPrefix}";
+
+            if (persistForTheNextRequest)
+            {
+                TempData[dataKey] = tabName;
+            }
+            else
+            {
+                ViewData[dataKey] = tabName;
+            }
+        }
+
+        #endregion
+
+        #region DataTables
+
+        /// <summary>
+        /// Creates an object that serializes the specified object to JSON
+        /// Used to serialize data for DataTables
+        /// </summary>
+        /// <typeparam name="T">Model type</typeparam>
+        /// <param name="model">The model to serialize.</param>
+        /// <returns>The created object that serializes the specified data to JSON format for the response.</returns>
+        /// <remarks>
+        /// See also https://datatables.net/manual/server-side#Returned-data
+        /// </remarks>
+        public JsonResult Json<T>(BasePagedListModel<T> model) where T : BaseNopModel
+        {
+            return Json(new
+            {
+                draw = model.Draw,
+                recordsTotal = model.RecordsTotal,
+                recordsFiltered = model.RecordsFiltered,
+                model.Data
+            });
+        }
+
         #endregion
     }
 }

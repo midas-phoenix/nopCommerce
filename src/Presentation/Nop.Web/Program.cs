@@ -1,18 +1,23 @@
-﻿using Microsoft.AspNetCore;
+﻿using System.Threading.Tasks;
+using Autofac.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Nop.Services.Configuration;
 
 namespace Nop.Web
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
-            var host = WebHost.CreateDefaultBuilder(args)
-                .UseKestrel(options => options.AddServerHeader = false)
-                .UseStartup<Startup>()
-                .Build();
-
-            host.Run();
+            await Host.CreateDefaultBuilder(args)
+                .UseServiceProviderFactory(new AutofacServiceProviderFactory())
+                .ConfigureWebHostDefaults(webBuilder => webBuilder
+                    .ConfigureAppConfiguration(configuration => configuration.AddJsonFile(NopConfigurationDefaults.AppSettingsFilePath, true, true))
+                    .UseStartup<Startup>())
+                .Build()
+                .RunAsync();
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Components;
 
@@ -10,12 +11,12 @@ namespace Nop.Web.Components
 
         public LanguageSelectorViewComponent(ICommonModelFactory commonModelFactory)
         {
-            this._commonModelFactory = commonModelFactory;
+            _commonModelFactory = commonModelFactory;
         }
 
-        public IViewComponentResult Invoke()
+        public async Task<IViewComponentResult> InvokeAsync()
         {
-            var model = _commonModelFactory.PrepareLanguageSelectorModel();
+            var model = await _commonModelFactory.PrepareLanguageSelectorModelAsync();
 
             if (model.AvailableLanguages.Count == 1)
                 return Content("");

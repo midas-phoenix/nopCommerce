@@ -2,10 +2,19 @@
 
 @{
     //page title
-    ViewBag.Title = T("Admin.Configuration.Settings.Blog").Text;
+    ViewBag.PageTitle = T("Admin.Configuration.Settings.Blog").Text;
     //active menu item (system name)
     Html.SetActiveMenuItemSystemName("Blog settings");
 }
+
+@{
+    const string hideCommonBlockAttributeName = "BlogSettingsPage.HideCommonBlock";
+    var hideCommonBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideCommonBlockAttributeName);
+
+    const string hideCommentsBlockAttributeName = "BlogSettingsPage.HideCommentsBlock";
+    var hideCommentsBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideCommentsBlockAttributeName);
+}
+
 
 <form asp-controller="Setting" asp-action="Blog" method="post">
     <div class="content-header clearfix">
@@ -13,7 +22,7 @@
             @T("Admin.Configuration.Settings.Blog")
         </h1>
         <div class="pull-right">
-            <button type="submit" name="save" class="btn bg-blue">
+            <button type="submit" name="save" class="btn btn-primary">
                 <i class="fa fa-floppy-o"></i>
                 @T("Admin.Common.Save")
             </button>
@@ -21,109 +30,20 @@
         </div>
     </div>
 
-    <div class="content">
-        <div class="form-horizontal">
-            @await Component.InvokeAsync("StoreScopeConfiguration")
-            @await Component.InvokeAsync("SettingMode")
-            <div asp-validation-summary="All"></div>
+    <section class="content">
+        <div class="container-fluid">
+            <div class="form-horizontal">
+                @await Component.InvokeAsync("StoreScopeConfiguration")
+                @await Component.InvokeAsync("SettingMode")
+                <div asp-validation-summary="All"></div>
 
-            <div class="panel-group">
-                @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.BlogSettingsTop })
-                <div class="panel panel-default">
-                    <div class="panel-heading">
-                        @T("Admin.Configuration.Settings.Blog.BlockTitle.Common")
-                    </div>
-                    <div class="panel-body">
-                        <div class="form-group">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="Enabled_OverrideForStore" asp-input="Enabled" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="Enabled"/>
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="Enabled" />
-                                <span asp-validation-for="Enabled"></span>
-                            </div>
-                        </div>
-                        <div class="form-group advanced-setting">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="PostsPageSize_OverrideForStore" asp-input="PostsPageSize" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="PostsPageSize" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="PostsPageSize" />
-                                <span asp-validation-for="PostsPageSize"></span>
-                            </div>
-                        </div>
-                        <div class="form-group advanced-setting">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="NumberOfTags_OverrideForStore" asp-input="NumberOfTags" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="NumberOfTags" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="NumberOfTags" />
-                                <span asp-validation-for="NumberOfTags"></span>
-                            </div>
-                        </div>
-                        <div class="form-group advanced-setting">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="ShowHeaderRssUrl_OverrideForStore" asp-input="ShowHeaderRssUrl" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="ShowHeaderRssUrl" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="ShowHeaderRssUrl" />
-                                <span asp-validation-for="ShowHeaderRssUrl"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel panel-default">
-                    <div class="panel-heading">
-                        @T("Admin.Configuration.Settings.Blog.BlockTitle.BlogComments")
-                    </div>
-                    <div class="panel-body">
-                        <div class="form-group">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="AllowNotRegisteredUsersToLeaveComments_OverrideForStore" asp-input="AllowNotRegisteredUsersToLeaveComments" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="AllowNotRegisteredUsersToLeaveComments" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="AllowNotRegisteredUsersToLeaveComments" />
-                                <span asp-validation-for="AllowNotRegisteredUsersToLeaveComments"></span>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="BlogCommentsMustBeApproved_OverrideForStore" asp-input="BlogCommentsMustBeApproved" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="BlogCommentsMustBeApproved" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="BlogCommentsMustBeApproved" />
-                                <span asp-validation-for="BlogCommentsMustBeApproved"></span>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <div class="col-md-3">
-                                <nop-override-store-checkbox asp-for="NotifyAboutNewBlogComments_OverrideForStore" asp-input="NotifyAboutNewBlogComments" asp-store-scope="@Model.ActiveStoreScopeConfiguration" />
-                                <nop-label asp-for="NotifyAboutNewBlogComments" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="NotifyAboutNewBlogComments" />
-                                <span asp-validation-for="NotifyAboutNewBlogComments"></span>
-                            </div>
-                        </div>
-                        <div class="form-group advanced-setting">
-                            <div class="col-md-3">
-                                <nop-label asp-for="ShowBlogCommentsPerStore" />
-                            </div>
-                            <div class="col-md-9">
-                                <nop-editor asp-for="ShowBlogCommentsPerStore" />
-                                <span asp-validation-for="ShowBlogCommentsPerStore"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.BlogSettingsBottom })
+                <nop-cards id="blogsettings-cards">
+                    <nop-card asp-name="blogsettings-common" asp-icon="fa fa-info" asp-title="@T("Admin.Configuration.Settings.Blog.BlockTitle.Common")" asp-hide-block-attribute-name="@hideCommonBlockAttributeName" asp-hide="@hideCommonBlock" asp-advanced="false">@await Html.PartialAsync("_Blog.Common", Model)</nop-card>
+                    <nop-card asp-name="blogsettings-comments" asp-icon="fa fa-comments-o" asp-title="@T("Admin.Configuration.Settings.Blog.BlockTitle.BlogComments")" asp-hide-block-attribute-name="@hideCommentsBlockAttributeName" asp-hide="@hideCommentsBlock" asp-advanced="false">@await Html.PartialAsync("_Blog.Comments", Model)</nop-card>
+
+                    @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.BlogDetailsBlock, additionalData = Model })
+                </nop-cards>
             </div>
         </div>
-    </div>
+        </section>
 </form>

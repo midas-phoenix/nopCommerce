@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Nop.Core.Domain.Directory;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Directory;
-using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Factories;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -33,11 +34,11 @@ namespace Nop.Web.Areas.Admin.Factories
             IStoreMappingSupportedModelFactory storeMappingSupportedModelFactory,
             IStateProvinceService stateProvinceService)
         {
-            this._countryService = countryService;
-            this._localizationService = localizationService;
-            this._localizedModelFactory = localizedModelFactory;
-            this._storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
-            this._stateProvinceService = stateProvinceService;
+            _countryService = countryService;
+            _localizationService = localizationService;
+            _localizedModelFactory = localizedModelFactory;
+            _storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
+            _stateProvinceService = stateProvinceService;
         }
 
         #endregion
@@ -75,7 +76,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Country search model</param>
         /// <returns>Country search model</returns>
-        public virtual CountrySearchModel PrepareCountrySearchModel(CountrySearchModel searchModel)
+        public virtual Task<CountrySearchModel> PrepareCountrySearchModelAsync(CountrySearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -83,7 +84,7 @@ namespace Nop.Web.Areas.Admin.Factories
             //prepare page parameters
             searchModel.SetGridPageSize();
 
-            return searchModel;
+            return Task.FromResult(searchModel);
         }
 
         /// <summary>
@@ -91,27 +92,27 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Country search model</param>
         /// <returns>Country list model</returns>
-        public virtual CountryListModel PrepareCountryListModel(CountrySearchModel searchModel)
+        public virtual async Task<CountryListModel> PrepareCountryListModelAsync(CountrySearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get countries
-            var countries = _countryService.GetAllCountries(showHidden: true);
+            var countries = (await _countryService.GetAllCountriesAsync(showHidden: true)).ToPagedList(searchModel);
 
             //prepare list model
-            var model = new CountryListModel
+            var model = await new CountryListModel().PrepareToGridAsync(searchModel, countries, () =>
             {
                 //fill in model values from the entity
-                Data = countries.PaginationByRequestModel(searchModel).Select(country =>
+                return countries.SelectAwait(async country =>
                 {
                     var countryModel = country.ToModel<CountryModel>();
-                    countryModel.NumberOfStates = country.StateProvinces?.Count ?? 0;
+
+                    countryModel.NumberOfStates = (await _stateProvinceService.GetStateProvincesByCountryIdAsync(country.Id))?.Count ?? 0;
 
                     return countryModel;
-                }),
-                Total = countries.Count
-            };
+                });
+            });
 
             return model;
         }
@@ -123,7 +124,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="country">Country</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Country model</returns>
-        public virtual CountryModel PrepareCountryModel(CountryModel model, Country country, bool excludeProperties = false)
+        public virtual async Task<CountryModel> PrepareCountryModelAsync(CountryModel model, Country country, bool excludeProperties = false)
         {
             Action<CountryLocalizedModel, int> localizedModelConfiguration = null;
 
@@ -133,16 +134,16 @@ namespace Nop.Web.Areas.Admin.Factories
                 if (model == null)
                 {
                     model = country.ToModel<CountryModel>();
-                    model.NumberOfStates = country.StateProvinces?.Count ?? 0;
+                    model.NumberOfStates = (await _stateProvinceService.GetStateProvincesByCountryIdAsync(country.Id))?.Count ?? 0;
                 }
 
                 //prepare nested search model
                 PrepareStateProvinceSearchModel(model.StateProvinceSearchModel, country);
 
                 //define localized model configuration action
-                localizedModelConfiguration = (locale, languageId) =>
+                localizedModelConfiguration = async (locale, languageId) =>
                 {
-                    locale.Name = _localizationService.GetLocalized(country, entity => entity.Name, languageId, false, false);
+                    locale.Name = await _localizationService.GetLocalizedAsync(country, entity => entity.Name, languageId, false, false);
                 };
             }
 
@@ -156,10 +157,10 @@ namespace Nop.Web.Areas.Admin.Factories
 
             //prepare localized models
             if (!excludeProperties)
-                model.Locales = _localizedModelFactory.PrepareLocalizedModels(localizedModelConfiguration);
+                model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(localizedModelConfiguration);
 
             //prepare available stores
-            _storeMappingSupportedModelFactory.PrepareModelStores(model, country, excludeProperties);
+            await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(model, country, excludeProperties);
 
             return model;
         }
@@ -170,7 +171,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="searchModel">State and province search model</param>
         /// <param name="country">Country</param>
         /// <returns>State and province list model</returns>
-        public virtual StateProvinceListModel PrepareStateProvinceListModel(StateProvinceSearchModel searchModel, Country country)
+        public virtual async Task<StateProvinceListModel> PrepareStateProvinceListModelAsync(StateProvinceSearchModel searchModel, Country country)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -179,15 +180,14 @@ namespace Nop.Web.Areas.Admin.Factories
                 throw new ArgumentNullException(nameof(country));
 
             //get comments
-            var states = _stateProvinceService.GetStateProvincesByCountryId(country.Id, showHidden: true);
+            var states = (await _stateProvinceService.GetStateProvincesByCountryIdAsync(country.Id, showHidden: true)).ToPagedList(searchModel);
 
             //prepare list model
-            var model = new StateProvinceListModel
+            var model = new StateProvinceListModel().PrepareToGrid(searchModel, states, () =>
             {
                 //fill in model values from the entity
-                Data = states.PaginationByRequestModel(searchModel).Select(state => state.ToModel<StateProvinceModel>()),
-                Total = states.Count
-            };
+                return states.Select(state => state.ToModel<StateProvinceModel>());
+            });
 
             return model;
         }
@@ -200,7 +200,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="state">State or province</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>State and province model</returns>
-        public virtual StateProvinceModel PrepareStateProvinceModel(StateProvinceModel model,
+        public virtual async Task<StateProvinceModel> PrepareStateProvinceModelAsync(StateProvinceModel model,
             Country country, StateProvince state, bool excludeProperties = false)
         {
             Action<StateProvinceLocalizedModel, int> localizedModelConfiguration = null;
@@ -208,12 +208,12 @@ namespace Nop.Web.Areas.Admin.Factories
             if (state != null)
             {
                 //fill in model values from the entity
-                model = model ?? state.ToModel<StateProvinceModel>();
+                model ??= state.ToModel<StateProvinceModel>();
 
                 //define localized model configuration action
-                localizedModelConfiguration = (locale, languageId) =>
+                localizedModelConfiguration = async (locale, languageId) =>
                 {
-                    locale.Name = _localizationService.GetLocalized(country, entity => entity.Name, languageId, false, false);
+                    locale.Name = await _localizationService.GetLocalizedAsync(state, entity => entity.Name, languageId, false, false);
                 };
             }
 
@@ -225,7 +225,7 @@ namespace Nop.Web.Areas.Admin.Factories
 
             //prepare localized models
             if (!excludeProperties)
-                model.Locales = _localizedModelFactory.PrepareLocalizedModels(localizedModelConfiguration);
+                model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(localizedModelConfiguration);
 
             return model;
         }

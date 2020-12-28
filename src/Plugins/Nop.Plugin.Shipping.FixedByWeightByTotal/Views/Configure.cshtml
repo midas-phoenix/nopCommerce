@@ -17,13 +17,13 @@
     </div>
     <div class="col-md-9">
         <div class="pull-right">
-            <a asp-controller="Shipping" asp-action="Methods" class="btn bg-blue">
+            <a asp-controller="Shipping" asp-action="Methods" class="btn btn-primary">
                 <i class="fa fa-truck"></i>
                 @T("Admin.Configuration.Shipping.Methods.Manage")
             </a>
-            <a asp-controller="Shipping" asp-action="Restrictions" class="btn bg-blue">
+            <a asp-controller="Shipping" asp-action="Restrictions" class="btn btn-primary">
                 <i class="fa fa-globe"></i>
-                @T("Admin.Configuration.Shipping.Restrictions.Manage")
+                @T("Admin.Configuration.Shipping.Restrictions")
             </a>
         </div>
     </div>
@@ -48,14 +48,17 @@
                     checkAdvancedSettingsMode($(this).is(':checked'));
                     $.ajax({
                         cache: false,
-                        url: '@Url.Action("SaveMode", "FixedByWeightByTotal")',
-                        type: 'post',
-                        data: { value: $(this).is(':checked') },
-                        dataType: 'json',
-                        error: function(xhr, ajaxOptions, thrownError) {
+                        url: "@Url.Action("SaveMode", "FixedByWeightByTotal")",
+                        type: "POST",
+                        data: {
+                            value: $(this).is(':checked')
+                        },
+                        dataType: "json",
+                        error: function (jqXHR, textStatus, errorThrown) {
                             $("#saveModeAlert").click();
                         }
                     });
+                    ensureDataTablesRendered();
                 });
         });
 </script>

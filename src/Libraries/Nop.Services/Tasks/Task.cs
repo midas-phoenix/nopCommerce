@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Linq;
+using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Tasks;
 using Nop.Core.Infrastructure;
+using Nop.Services.Localization;
 using Nop.Services.Logging;
 
 namespace Nop.Services.Tasks
@@ -62,10 +64,8 @@ namespace Nop.Services.Tasks
             }
 
             if (instance == null)
-            {
                 //not resolved
                 instance = EngineContext.Current.ResolveUnregistered(type);
-            }
 
             var task = instance as IScheduleTask;
             if (task == null)
@@ -73,11 +73,11 @@ namespace Nop.Services.Tasks
 
             ScheduleTask.LastStartUtc = DateTime.UtcNow;
             //update appropriate datetime properties
-            scheduleTaskService.UpdateTask(ScheduleTask);
-            task.Execute();
+            scheduleTaskService.UpdateTaskAsync(ScheduleTask).Wait();
+            task.ExecuteAsync().Wait();
             ScheduleTask.LastEndUtc = ScheduleTask.LastSuccessUtc = DateTime.UtcNow;
             //update appropriate datetime properties
-            scheduleTaskService.UpdateTask(ScheduleTask);
+            scheduleTaskService.UpdateTaskAsync(ScheduleTask).Wait();
         }
 
         /// <summary>
@@ -113,7 +113,7 @@ namespace Nop.Services.Tasks
         /// </summary>
         /// <param name="throwException">A value indicating whether exception should be thrown if some error happens</param>
         /// <param name="ensureRunOncePerPeriod">A value indicating whether we should ensure this task is run once per run period</param>
-        public void Execute(bool throwException = false, bool ensureRunOncePerPeriod = true)
+        public async System.Threading.Tasks.Task ExecuteAsync(bool throwException = false, bool ensureRunOncePerPeriod = true)
         {
             if (ScheduleTask == null || !Enabled)
                 return;
@@ -143,14 +143,20 @@ namespace Nop.Services.Tasks
             catch (Exception exc)
             {
                 var scheduleTaskService = EngineContext.Current.Resolve<IScheduleTaskService>();
+                var localizationService = EngineContext.Current.Resolve<ILocalizationService>();
+                var storeContext = EngineContext.Current.Resolve<IStoreContext>();
+                var scheduleTaskUrl = $"{(await storeContext.GetCurrentStoreAsync()).Url}{NopTaskDefaults.ScheduleTaskPath}";
 
                 ScheduleTask.Enabled = !ScheduleTask.StopOnError;
                 ScheduleTask.LastEndUtc = DateTime.UtcNow;
-                scheduleTaskService.UpdateTask(ScheduleTask);
+                await scheduleTaskService.UpdateTaskAsync(ScheduleTask);
+
+                var message = string.Format(await localizationService.GetResourceAsync("ScheduleTasks.Error"), ScheduleTask.Name,
+                    exc.Message, ScheduleTask.Type, (await storeContext.GetCurrentStoreAsync()).Name, scheduleTaskUrl);
 
                 //log error
                 var logger = EngineContext.Current.Resolve<ILogger>();
-                logger.Error($"Error while running the '{ScheduleTask.Name}' schedule task. {exc.Message}", exc);
+                await logger.ErrorAsync(message, exc);
                 if (throwException)
                     throw;
             }
@@ -175,7 +181,7 @@ namespace Nop.Services.Tasks
                 if (!_enabled.HasValue)
                     _enabled = ScheduleTask?.Enabled;
 
-                    return _enabled.HasValue && _enabled.Value;
+                return _enabled.HasValue && _enabled.Value;
             }
 
             set => _enabled = value;

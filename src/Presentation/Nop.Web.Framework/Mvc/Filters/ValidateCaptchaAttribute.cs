@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Primitives;
-using Nop.Core.Data;
+using Nop.Core;
 using Nop.Core.Domain.Security;
+using Nop.Data;
+using Nop.Services.Logging;
 using Nop.Web.Framework.Security.Captcha;
 
 namespace Nop.Web.Framework.Mvc.Filters
@@ -11,7 +14,7 @@ namespace Nop.Web.Framework.Mvc.Filters
     /// <summary>
     /// Represents a filter attribute enabling CAPTCHA validation
     /// </summary>
-    public class ValidateCaptchaAttribute : TypeFilterAttribute
+    public sealed class ValidateCaptchaAttribute : TypeFilterAttribute
     {
         #region Ctor
 
@@ -21,7 +24,7 @@ namespace Nop.Web.Framework.Mvc.Filters
         /// <param name="actionParameterName">The name of the action parameter to which the result will be passed</param>
         public ValidateCaptchaAttribute(string actionParameterName = "captchaValid") : base(typeof(ValidateCaptchaFilter))
         {
-            this.Arguments = new object[] { actionParameterName };
+            Arguments = new object[] { actionParameterName };
         }
 
         #endregion
@@ -31,11 +34,10 @@ namespace Nop.Web.Framework.Mvc.Filters
         /// <summary>
         /// Represents a filter enabling CAPTCHA validation
         /// </summary>
-        private class ValidateCaptchaFilter : IActionFilter
+        private class ValidateCaptchaFilter : IAsyncActionFilter
         {
             #region Constants
 
-            private const string CHALLENGE_FIELD_KEY = "recaptcha_challenge_field";
             private const string RESPONSE_FIELD_KEY = "recaptcha_response_field";
             private const string G_RESPONSE_FIELD_KEY = "g-recaptcha-response";
 
@@ -44,16 +46,26 @@ namespace Nop.Web.Framework.Mvc.Filters
             #region Fields
 
             private readonly string _actionParameterName;
+            private readonly CaptchaHttpClient _captchaHttpClient;
             private readonly CaptchaSettings _captchaSettings;
+            private readonly ILogger _logger;
+            private readonly IWorkContext _workContext;
 
             #endregion
 
             #region Ctor
 
-            public ValidateCaptchaFilter(string actionParameterName, CaptchaSettings captchaSettings)
+            public ValidateCaptchaFilter(string actionParameterName,
+                CaptchaHttpClient captchaHttpClient,
+                CaptchaSettings captchaSettings,
+                ILogger logger,
+                IWorkContext workContext)
             {
-                this._actionParameterName = actionParameterName;
-                this._captchaSettings = captchaSettings;
+                _actionParameterName = actionParameterName;
+                _captchaHttpClient = captchaHttpClient;
+                _captchaSettings = captchaSettings;
+                _logger = logger;
+                _workContext = workContext;
             }
 
             #endregion
@@ -61,36 +73,62 @@ namespace Nop.Web.Framework.Mvc.Filters
             #region Utilities
 
             /// <summary>
-            /// Validate CAPTCHA
+            /// Called asynchronously before the action, after model binding is complete.
             /// </summary>
             /// <param name="context">A context for action filters</param>
-            /// <returns>True if CAPTCHA is valid; otherwise false</returns>
-            protected bool ValidateCaptcha(ActionExecutingContext context)
+            /// <returns>A task that on completion indicates the necessary filter actions have been executed</returns>
+            private async Task ValidateCaptchaAsync(ActionExecutingContext context)
             {
-                var isValid = false;
+                if (context == null)
+                    throw new ArgumentNullException(nameof(context));
 
-                //get form values
-                var captchaChallengeValue = context.HttpContext.Request.Form[CHALLENGE_FIELD_KEY];
-                var captchaResponseValue = context.HttpContext.Request.Form[RESPONSE_FIELD_KEY];
-                var gCaptchaResponseValue = context.HttpContext.Request.Form[G_RESPONSE_FIELD_KEY];
+                if (!await DataSettingsManager.IsDatabaseInstalledAsync())
+                    return;
 
-                if ((!StringValues.IsNullOrEmpty(captchaChallengeValue) && !StringValues.IsNullOrEmpty(captchaResponseValue)) || !StringValues.IsNullOrEmpty(gCaptchaResponseValue))
+                //whether CAPTCHA is enabled
+                if (_captchaSettings.Enabled && context.HttpContext?.Request != null)
                 {
-                    //create CAPTCHA validator
-                    var captchaValidtor = new GReCaptchaValidator()
+                    //push the validation result as an action parameter
+                    var isValid = false;
+
+                    //get form values
+                    var captchaResponseValue = context.HttpContext.Request.Form[RESPONSE_FIELD_KEY];
+                    var gCaptchaResponseValue = context.HttpContext.Request.Form[G_RESPONSE_FIELD_KEY];
+
+                    if (!StringValues.IsNullOrEmpty(captchaResponseValue) || !StringValues.IsNullOrEmpty(gCaptchaResponseValue))
                     {
-                        SecretKey = _captchaSettings.ReCaptchaPrivateKey,
-                        RemoteIp = context.HttpContext.Connection.RemoteIpAddress?.ToString(),
-                        Response = !StringValues.IsNullOrEmpty(captchaResponseValue) ? captchaResponseValue : gCaptchaResponseValue,
-                        Challenge = captchaChallengeValue
-                    };
+                        //validate request
+                        try
+                        {
+                            var value = !StringValues.IsNullOrEmpty(captchaResponseValue) ? captchaResponseValue : gCaptchaResponseValue;
+                            var response = await _captchaHttpClient.ValidateCaptchaAsync(value);
 
-                    //validate request
-                    var recaptchaResponse = captchaValidtor.Validate();
-                    isValid = recaptchaResponse.IsValid;
+                            switch (_captchaSettings.CaptchaType)
+                            {
+                                case CaptchaType.CheckBoxReCaptchaV2:
+                                    isValid = response.IsValid;
+                                    break;
+
+                                case CaptchaType.ReCaptchaV3:
+                                    isValid = response.IsValid &&
+                                        response.Action == context.RouteData.Values["action"].ToString() &&
+                                        response.Score > _captchaSettings.ReCaptchaV3ScoreThreshold;
+                                    break;
+
+                                default:
+                                    break;
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            await _logger.ErrorAsync("Error occurred on CAPTCHA validation", exception, await _workContext.GetCurrentCustomerAsync());
+                        }
+                    }
+
+                    context.ActionArguments[_actionParameterName] = isValid;
                 }
-
-                return isValid;
+                else
+                    context.ActionArguments[_actionParameterName] = false;
             }
 
             #endregion
@@ -98,35 +136,16 @@ namespace Nop.Web.Framework.Mvc.Filters
             #region Methods
 
             /// <summary>
-            /// Called before the action executes, after model binding is complete
+            /// Called asynchronously before the action, after model binding is complete.
             /// </summary>
             /// <param name="context">A context for action filters</param>
-            public void OnActionExecuting(ActionExecutingContext context)
+            /// <param name="next">A delegate invoked to execute the next action filter or the action itself</param>
+            /// <returns>A task that on completion indicates the filter has executed</returns>
+            public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
             {
-                if (context == null)
-                    throw new ArgumentNullException(nameof(context));
-
-                if (!DataSettingsManager.DatabaseIsInstalled)
-                    return;
-
-                //whether CAPTCHA is enabled
-                if (_captchaSettings.Enabled && context.HttpContext?.Request != null)
-                {
-                    //push the validation result as an action parameter
-                    context.ActionArguments[_actionParameterName] = ValidateCaptcha(context);
-                }
-                else
-                    context.ActionArguments[_actionParameterName] = false;
-
-            }
-
-            /// <summary>
-            /// Called after the action executes, before the action result
-            /// </summary>
-            /// <param name="context">A context for action filters</param>
-            public void OnActionExecuted(ActionExecutedContext context)
-            {
-                //do nothing
+                await ValidateCaptchaAsync(context);
+                if (context.Result == null)
+                    await next();
             }
 
             #endregion

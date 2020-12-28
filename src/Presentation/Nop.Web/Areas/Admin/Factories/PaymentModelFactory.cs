@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Nop.Core.Plugins;
+using System.Threading.Tasks;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
 using Nop.Services.Payments;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Directory;
 using Nop.Web.Areas.Admin.Models.Payments;
-using Nop.Web.Framework.Extensions;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -21,7 +21,8 @@ namespace Nop.Web.Areas.Admin.Factories
 
         private readonly ICountryService _countryService;
         private readonly ILocalizationService _localizationService;
-        private readonly IPaymentService _paymentService;
+        private readonly IPaymentPluginManager _paymentPluginManager;
+        private readonly IStateProvinceService _stateProvinceService;
 
         #endregion
 
@@ -29,11 +30,72 @@ namespace Nop.Web.Areas.Admin.Factories
 
         public PaymentModelFactory(ICountryService countryService,
             ILocalizationService localizationService,
-            IPaymentService paymentService)
+            IPaymentPluginManager paymentPluginManager,
+            IStateProvinceService stateProvinceService)
         {
-            this._countryService = countryService;
-            this._localizationService = localizationService;
-            this._paymentService = paymentService;
+            _countryService = countryService;
+            _localizationService = localizationService;
+            _paymentPluginManager = paymentPluginManager;
+            _stateProvinceService = stateProvinceService;
+        }
+
+        #endregion
+
+        #region Utilities
+
+        /// <summary>
+        /// Prepare payment method search model
+        /// </summary>
+        /// <param name="searchModel">Payment method search model</param>
+        /// <returns>Payment method search model</returns>
+        protected virtual Task<PaymentMethodSearchModel> PreparePaymentMethodSearchModelAsync(PaymentMethodSearchModel searchModel)
+        {
+            if (searchModel == null)
+                throw new ArgumentNullException(nameof(searchModel));
+
+            //prepare page parameters
+            searchModel.SetGridPageSize();
+
+            return Task.FromResult(searchModel);
+        }
+
+        /// <summary>
+        /// Prepare payment method restriction model
+        /// </summary>
+        /// <param name="model">Payment method restriction model</param>
+        /// <returns>Payment method restriction model</returns>
+        protected virtual async Task<PaymentMethodRestrictionModel> PreparePaymentMethodRestrictionModelAsync(PaymentMethodRestrictionModel model)
+        {
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
+
+            var countries = await _countryService.GetAllCountriesAsync(showHidden: true);
+            model.AvailableCountries = await countries.SelectAwait(async country =>
+            {
+                var countryModel = country.ToModel<CountryModel>();
+                countryModel.NumberOfStates = (await _stateProvinceService.GetStateProvincesByCountryIdAsync(country.Id))?.Count ?? 0;
+
+                return countryModel;
+            }).ToListAsync();
+
+            foreach (var method in await _paymentPluginManager.LoadAllPluginsAsync())
+            {
+                var paymentMethodModel = method.ToPluginModel<PaymentMethodModel>();
+                paymentMethodModel.RecurringPaymentType = await _localizationService.GetLocalizedEnumAsync(method.RecurringPaymentType);
+
+                model.AvailablePaymentMethods.Add(paymentMethodModel);
+
+                var restrictedCountries = await _paymentPluginManager.GetRestrictedCountryIdsAsync(method);
+                foreach (var country in countries)
+                {
+                    if (!model.Restricted.ContainsKey(method.PluginDescriptor.SystemName))
+                        model.Restricted[method.PluginDescriptor.SystemName] = new Dictionary<int, bool>();
+
+                    model.Restricted[method.PluginDescriptor.SystemName][country.Id] = restrictedCountries.Contains(country.Id);
+                }
+            }
+
+            return model;
         }
 
         #endregion
@@ -45,32 +107,16 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="methodsModel">Payment methods model</param>
         /// <returns>Payment methods model</returns>
-        public virtual PaymentMethodsModel PreparePaymentMethodsModel(PaymentMethodsModel methodsModel)
+        public virtual async Task<PaymentMethodsModel> PreparePaymentMethodsModelAsync(PaymentMethodsModel methodsModel)
         {
             if (methodsModel == null)
                 throw new ArgumentNullException(nameof(methodsModel));
 
             //prepare nested search models
-            PreparePaymentMethodSearchModel(methodsModel.PaymentsMethod);
-            PreparePaymentMethodRestrictionModel(methodsModel.PaymentMethodRestriction);
+            await PreparePaymentMethodSearchModelAsync(methodsModel.PaymentsMethod);
+            await PreparePaymentMethodRestrictionModelAsync(methodsModel.PaymentMethodRestriction);
 
             return methodsModel;
-        }
-
-        /// <summary>
-        /// Prepare payment method search model
-        /// </summary>
-        /// <param name="searchModel">Payment method search model</param>
-        /// <returns>Payment method search model</returns>
-        public virtual PaymentMethodSearchModel PreparePaymentMethodSearchModel(PaymentMethodSearchModel searchModel)
-        {
-            if (searchModel == null)
-                throw new ArgumentNullException(nameof(searchModel));
-
-            //prepare page parameters
-            searchModel.SetGridPageSize();
-
-            return searchModel;
         }
 
         /// <summary>
@@ -78,71 +124,32 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Payment method search model</param>
         /// <returns>Payment method list model</returns>
-        public virtual PaymentMethodListModel PreparePaymentMethodListModel(PaymentMethodSearchModel searchModel)
+        public virtual async Task<PaymentMethodListModel> PreparePaymentMethodListModelAsync(PaymentMethodSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get payment methods
-            var paymentMethods = _paymentService.LoadAllPaymentMethods();
+            var paymentMethods = (await _paymentPluginManager.LoadAllPluginsAsync()).ToPagedList(searchModel);
 
             //prepare grid model
-            var model = new PaymentMethodListModel
+            var model = await new PaymentMethodListModel().PrepareToGridAsync(searchModel, paymentMethods, () =>
             {
-                Data = paymentMethods.PaginationByRequestModel(searchModel).Select(method =>
+                return paymentMethods.SelectAwait(async method =>
                 {
                     //fill in model values from the entity
                     var paymentMethodModel = method.ToPluginModel<PaymentMethodModel>();
 
                     //fill in additional values (not existing in the entity)
-                    paymentMethodModel.IsActive = _paymentService.IsPaymentMethodActive(method);
+                    paymentMethodModel.IsActive = _paymentPluginManager.IsPluginActive(method);
                     paymentMethodModel.ConfigurationUrl = method.GetConfigurationPageUrl();
-                    paymentMethodModel.LogoUrl = PluginManager.GetLogoUrl(method.PluginDescriptor);
-                    paymentMethodModel.RecurringPaymentType = _localizationService.GetLocalizedEnum(method.RecurringPaymentType);
+
+                    paymentMethodModel.LogoUrl = await _paymentPluginManager.GetPluginLogoUrlAsync(method);
+                    paymentMethodModel.RecurringPaymentType = await _localizationService.GetLocalizedEnumAsync(method.RecurringPaymentType);
 
                     return paymentMethodModel;
-                }),
-                Total = paymentMethods.Count
-            };
-
-            return model;
-        }
-
-        /// <summary>
-        /// Prepare payment method restriction model
-        /// </summary>
-        /// <param name="model">Payment method restriction model</param>
-        /// <returns>Payment method restriction model</returns>
-        public virtual PaymentMethodRestrictionModel PreparePaymentMethodRestrictionModel(PaymentMethodRestrictionModel model)
-        {
-            if (model == null)
-                throw new ArgumentNullException(nameof(model));
-
-            var countries = _countryService.GetAllCountries(showHidden: true);
-            model.AvailableCountries = countries.Select(country =>
-            {
-                var countryModel = country.ToModel<CountryModel>();
-                countryModel.NumberOfStates = country.StateProvinces?.Count ?? 0;
-
-                return countryModel;
-            }).ToList();
-
-            foreach (var method in _paymentService.LoadAllPaymentMethods())
-            {
-                var paymentMethodModel = method.ToPluginModel<PaymentMethodModel>();
-                paymentMethodModel.RecurringPaymentType = _localizationService.GetLocalizedEnum(method.RecurringPaymentType);
-
-                model.AvailablePaymentMethods.Add(paymentMethodModel);
-
-                var restrictedCountries = _paymentService.GetRestictedCountryIds(method);
-                foreach (var country in countries)
-                {
-                    if (!model.Resticted.ContainsKey(method.PluginDescriptor.SystemName))
-                        model.Resticted[method.PluginDescriptor.SystemName] = new Dictionary<int, bool>();
-
-                    model.Resticted[method.PluginDescriptor.SystemName][country.Id] = restrictedCountries.Contains(country.Id);
-                }
-            }
+                });
+            });
 
             return model;
         }

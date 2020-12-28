@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Polls;
 using Nop.Services.Helpers;
@@ -9,6 +10,7 @@ using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Polls;
 using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Factories;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -37,12 +39,12 @@ namespace Nop.Web.Areas.Admin.Factories
             IPollService pollService,
             IStoreMappingSupportedModelFactory storeMappingSupportedModelFactory)
         {
-            this._catalogSettings = catalogSettings;
-            this._baseAdminModelFactory = baseAdminModelFactory;
-            this._dateTimeHelper = dateTimeHelper;
-            this._languageService = languageService;
-            this._pollService = pollService;
-            this._storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
+            _catalogSettings = catalogSettings;
+            _baseAdminModelFactory = baseAdminModelFactory;
+            _dateTimeHelper = dateTimeHelper;
+            _languageService = languageService;
+            _pollService = pollService;
+            _storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
         }
 
         #endregion
@@ -80,13 +82,13 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Poll search model</param>
         /// <returns>Poll search model</returns>
-        public virtual PollSearchModel PreparePollSearchModel(PollSearchModel searchModel)
+        public virtual async Task<PollSearchModel> PreparePollSearchModelAsync(PollSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //prepare available stores
-            _baseAdminModelFactory.PrepareStores(searchModel.AvailableStores);
+            await _baseAdminModelFactory.PrepareStoresAsync(searchModel.AvailableStores);
 
             searchModel.HideStoresList = _catalogSettings.IgnoreStoreLimitations || searchModel.AvailableStores.SelectionIsNotPossible();
 
@@ -101,37 +103,36 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Poll search model</param>
         /// <returns>Poll list model</returns>
-        public virtual PollListModel PreparePollListModel(PollSearchModel searchModel)
+        public virtual async Task<PollListModel> PreparePollListModelAsync(PollSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get polls
-            var polls = _pollService.GetPolls(showHidden: true,
+            var polls = await _pollService.GetPollsAsync(showHidden: true,
                 storeId: searchModel.SearchStoreId,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
 
             //prepare list model
-            var model = new PollListModel
+            var model = await new PollListModel().PrepareToGridAsync(searchModel, polls, () =>
             {
-                Data = polls.Select(poll =>
+                return polls.SelectAwait(async poll =>
                 {
                     //fill in model values from the entity
                     var pollModel = poll.ToModel<PollModel>();
 
                     //convert dates to the user time
                     if (poll.StartDateUtc.HasValue)
-                        pollModel.StartDateUtc = _dateTimeHelper.ConvertToUserTime(poll.StartDateUtc.Value, DateTimeKind.Utc);
+                        pollModel.StartDateUtc = await _dateTimeHelper.ConvertToUserTimeAsync(poll.StartDateUtc.Value, DateTimeKind.Utc);
                     if (poll.EndDateUtc.HasValue)
-                        pollModel.EndDateUtc = _dateTimeHelper.ConvertToUserTime(poll.EndDateUtc.Value, DateTimeKind.Utc);
+                        pollModel.EndDateUtc = await _dateTimeHelper.ConvertToUserTimeAsync(poll.EndDateUtc.Value, DateTimeKind.Utc);
 
                     //fill in additional values (not existing in the entity)
-                    pollModel.LanguageName = _languageService.GetLanguageById(poll.LanguageId)?.Name;
+                    pollModel.LanguageName = (await _languageService.GetLanguageByIdAsync(poll.LanguageId))?.Name;
 
                     return pollModel;
-                }),
-                Total = polls.TotalCount
-            };
+                });
+            });
 
             return model;
         }
@@ -143,12 +144,12 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="poll">Poll</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Poll model</returns>
-        public virtual PollModel PreparePollModel(PollModel model, Poll poll, bool excludeProperties = false)
+        public virtual async Task<PollModel> PreparePollModelAsync(PollModel model, Poll poll, bool excludeProperties = false)
         {
             if (poll != null)
             {
                 //fill in model values from the entity
-                model = model ?? poll.ToModel<PollModel>();
+                model ??= poll.ToModel<PollModel>();
 
                 model.StartDateUtc = poll.StartDateUtc;
                 model.EndDateUtc = poll.EndDateUtc;
@@ -161,14 +162,14 @@ namespace Nop.Web.Areas.Admin.Factories
             if (poll == null)
             {
                 model.Published = true;
-                model.ShowOnHomePage = true;
+                model.ShowOnHomepage = true;
             }
 
             //prepare available languages
-            _baseAdminModelFactory.PrepareLanguages(model.AvailableLanguages, false);
+            await _baseAdminModelFactory.PrepareLanguagesAsync(model.AvailableLanguages, false);
 
             //prepare available stores
-            _storeMappingSupportedModelFactory.PrepareModelStores(model, poll, excludeProperties);
+            await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(model, poll, excludeProperties);
 
             return model;
         }
@@ -179,7 +180,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="searchModel">Poll answer search model</param>
         /// <param name="poll">Poll</param>
         /// <returns>Poll answer list model</returns>
-        public virtual PollAnswerListModel PreparePollAnswerListModel(PollAnswerSearchModel searchModel, Poll poll)
+        public virtual async Task<PollAnswerListModel> PreparePollAnswerListModelAsync(PollAnswerSearchModel searchModel, Poll poll)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -188,15 +189,11 @@ namespace Nop.Web.Areas.Admin.Factories
                 throw new ArgumentNullException(nameof(poll));
 
             //get poll answers
-            var pollAnswers = poll.PollAnswers.OrderBy(pollAnswer => pollAnswer.DisplayOrder).ToList();
+            var pollAnswers = await _pollService.GetPollAnswerByPollAsync(poll.Id, searchModel.Page - 1, searchModel.PageSize);
 
             //prepare list model
-            var model = new PollAnswerListModel
-            {
-                //fill in model values from the entity
-                Data = pollAnswers.PaginationByRequestModel(searchModel).Select(pollAnswer => pollAnswer.ToModel<PollAnswerModel>()),
-                Total = pollAnswers.Count
-            };
+            var model = new PollAnswerListModel().PrepareToGrid(searchModel, pollAnswers,
+                () => pollAnswers.Select(pollAnswer => pollAnswer.ToModel<PollAnswerModel>()));
 
             return model;
         }

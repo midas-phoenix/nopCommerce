@@ -1,4 +1,5 @@
-﻿using Nop.Core.Domain.Discounts;
+﻿using System.Threading.Tasks;
+using Nop.Core.Domain.Discounts;
 using Nop.Core.Events;
 using Nop.Services.Configuration;
 using Nop.Services.Events;
@@ -20,7 +21,7 @@ namespace Nop.Plugin.DiscountRules.CustomerRoles.Infrastructure.Cache
 
         public DiscountRequirementEventConsumer(ISettingService settingService)
         {
-            this._settingService = settingService;
+            _settingService = settingService;
         }
 
         #endregion
@@ -31,16 +32,16 @@ namespace Nop.Plugin.DiscountRules.CustomerRoles.Infrastructure.Cache
         /// Handle discount requirement deleted event
         /// </summary>
         /// <param name="eventMessage">Event message</param>
-        public void HandleEvent(EntityDeletedEvent<DiscountRequirement> eventMessage)
+        public async Task HandleEventAsync(EntityDeletedEvent<DiscountRequirement> eventMessage)
         {
             var discountRequirement = eventMessage?.Entity;
             if (discountRequirement == null)
                 return;
 
             //delete saved restricted customer role identifier if exists
-            var setting = _settingService.GetSetting(string.Format(DiscountRequirementDefaults.SettingsKey, discountRequirement.Id));
+            var setting = await _settingService.GetSettingAsync(string.Format(DiscountRequirementDefaults.SettingsKey, discountRequirement.Id));
             if (setting != null)
-                _settingService.DeleteSetting(setting);
+                await _settingService.DeleteSettingAsync(setting);
         }
 
         #endregion

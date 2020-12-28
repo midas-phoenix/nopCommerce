@@ -26,8 +26,8 @@ namespace Nop.Services.Directory
         public GeoLookupService(ILogger logger,
             INopFileProvider fileProvider)
         {
-            this._logger = logger;
-            this._fileProvider = fileProvider;
+            _logger = logger;
+            _fileProvider = fileProvider;
         }
 
         #endregion
@@ -74,7 +74,7 @@ namespace Nop.Services.Directory
             catch (Exception exc)
             {
                 //do not throw exceptions
-                _logger.Warning("Cannot load MaxMind record", exc);
+                _logger.WarningAsync("Cannot load MaxMind record", exc).Wait();
                 return null;
             }
         }
@@ -84,7 +84,7 @@ namespace Nop.Services.Directory
         #region Methods
 
         /// <summary>
-        /// Get country name
+        /// Get country ISO code
         /// </summary>
         /// <param name="ipAddress">IP address</param>
         /// <returns>Country name</returns>

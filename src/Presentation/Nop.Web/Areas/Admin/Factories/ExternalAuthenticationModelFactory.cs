@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Nop.Services.Authentication.External;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.ExternalAuthentication;
-using Nop.Web.Framework.Extensions;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -14,15 +15,15 @@ namespace Nop.Web.Areas.Admin.Factories
     {
         #region Fields
 
-        private readonly IExternalAuthenticationService _externalAuthenticationService;
+        private readonly IAuthenticationPluginManager _authenticationPluginManager;
 
         #endregion
 
         #region Ctor
 
-        public ExternalAuthenticationMethodModelFactory(IExternalAuthenticationService externalAuthenticationService)
+        public ExternalAuthenticationMethodModelFactory(IAuthenticationPluginManager authenticationPluginManager)
         {
-            this._externalAuthenticationService = externalAuthenticationService;
+            _authenticationPluginManager = authenticationPluginManager;
         }
 
         #endregion
@@ -51,31 +52,31 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">External authentication method search model</param>
         /// <returns>External authentication method list model</returns>
-        public virtual ExternalAuthenticationMethodListModel PrepareExternalAuthenticationMethodListModel(
+        public virtual async Task<ExternalAuthenticationMethodListModel> PrepareExternalAuthenticationMethodListModelAsync(
             ExternalAuthenticationMethodSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get external authentication methods
-            var externalAuthenticationMethods = _externalAuthenticationService.LoadAllExternalAuthenticationMethods();
+            var externalAuthenticationMethods = (await _authenticationPluginManager.LoadAllPluginsAsync()).ToPagedList(searchModel);
 
             //prepare grid model
-            var model = new ExternalAuthenticationMethodListModel
+            var model = new ExternalAuthenticationMethodListModel().PrepareToGrid(searchModel, externalAuthenticationMethods, () =>
             {
-                Data = externalAuthenticationMethods.PaginationByRequestModel(searchModel).Select(method =>
+                //fill in model values from the entity
+                return externalAuthenticationMethods.Select(method =>
                 {
                     //fill in model values from the entity
                     var externalAuthenticationMethodModel = method.ToPluginModel<ExternalAuthenticationMethodModel>();
 
                     //fill in additional values (not existing in the entity)
-                    externalAuthenticationMethodModel.IsActive = _externalAuthenticationService.IsExternalAuthenticationMethodActive(method);
+                    externalAuthenticationMethodModel.IsActive = _authenticationPluginManager.IsPluginActive(method);
                     externalAuthenticationMethodModel.ConfigurationUrl = method.GetConfigurationPageUrl();
 
                     return externalAuthenticationMethodModel;
-                }),
-                Total = externalAuthenticationMethods.Count
-            };
+                });
+            });
 
             return model;
         }

@@ -1,17 +1,18 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using LinqToDB;
+using Microsoft.AspNetCore.Http;
 using Nop.Core;
-using Nop.Core.Data;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Media;
 using Nop.Core.Infrastructure;
 using Nop.Data;
 using Nop.Services.Catalog;
 using Nop.Services.Configuration;
-using Nop.Services.Events;
 using Nop.Services.Seo;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
@@ -21,8 +22,6 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Processing.Transforms;
-using SixLabors.Primitives;
 using static SixLabors.ImageSharp.Configuration;
 
 namespace Nop.Services.Media
@@ -34,9 +33,9 @@ namespace Nop.Services.Media
     {
         #region Fields
 
-        private readonly IDataProvider _dataProvider;
-        private readonly IDbContext _dbContext;
-        private readonly IEventPublisher _eventPublisher;
+        private readonly INopDataProvider _dataProvider;
+        private readonly IDownloadService _downloadService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly INopFileProvider _fileProvider;
         private readonly IProductAttributeParser _productAttributeParser;
         private readonly IRepository<Picture> _pictureRepository;
@@ -51,9 +50,9 @@ namespace Nop.Services.Media
 
         #region Ctor
 
-        public PictureService(IDataProvider dataProvider,
-            IDbContext dbContext,
-            IEventPublisher eventPublisher,
+        public PictureService(INopDataProvider dataProvider,
+            IDownloadService downloadService,
+            IHttpContextAccessor httpContextAccessor,
             INopFileProvider fileProvider,
             IProductAttributeParser productAttributeParser,
             IRepository<Picture> pictureRepository,
@@ -64,23 +63,39 @@ namespace Nop.Services.Media
             IWebHelper webHelper,
             MediaSettings mediaSettings)
         {
-            this._dataProvider = dataProvider;
-            this._dbContext = dbContext;
-            this._eventPublisher = eventPublisher;
-            this._fileProvider = fileProvider;
-            this._productAttributeParser = productAttributeParser;
-            this._pictureRepository = pictureRepository;
-            this._pictureBinaryRepository = pictureBinaryRepository;
-            this._productPictureRepository = productPictureRepository;
-            this._settingService = settingService;
-            this._urlRecordService = urlRecordService;
-            this._webHelper = webHelper;
-            this._mediaSettings = mediaSettings;
+            _dataProvider = dataProvider;
+            _downloadService = downloadService;
+            _httpContextAccessor = httpContextAccessor;
+            _fileProvider = fileProvider;
+            _productAttributeParser = productAttributeParser;
+            _pictureRepository = pictureRepository;
+            _pictureBinaryRepository = pictureBinaryRepository;
+            _productPictureRepository = productPictureRepository;
+            _settingService = settingService;
+            _urlRecordService = urlRecordService;
+            _webHelper = webHelper;
+            _mediaSettings = mediaSettings;
         }
 
         #endregion
 
         #region Utilities
+
+        /// <summary>
+        /// Gets a data hash from database side
+        /// </summary>
+        /// <param name="binaryData">Array for a hashing function</param>
+        /// <param name="limit">Allowed limit input value</param>
+        /// <returns>Data hash</returns>
+        /// <remarks>
+        /// For SQL Server 2014 (12.x) and earlier, allowed input values are limited to 8000 bytes. 
+        /// https://docs.microsoft.com/en-us/sql/t-sql/functions/hashbytes-transact-sql
+        /// </remarks>
+        [Sql.Expression("CONVERT(VARCHAR(128), HASHBYTES('SHA2_512', SUBSTRING({0}, 0, {1})), 2)", ServerSideOnly = true, Configuration = ProviderName.SqlServer)]
+        [Sql.Expression("SHA2({0}, 512)", ServerSideOnly = true, Configuration = ProviderName.MySql)]
+        [Sql.Expression("encode(digest({0}, 'sha512'), 'hex')", ServerSideOnly = true, Configuration = ProviderName.PostgreSQL95)]
+        public static string Hash(byte[] binaryData, int limit)
+            => throw new InvalidOperationException("This function should be used only in database code");
 
         /// <summary>
         /// Calculates picture dimensions whilst maintaining aspect
@@ -124,7 +139,7 @@ namespace Nop.Services.Media
                     throw new Exception("Not supported ResizeType");
             }
 
-            if (!ensureSizePositive) 
+            if (!ensureSizePositive)
                 return new Size((int)Math.Round(width), (int)Math.Round(height));
 
             if (width < 1)
@@ -132,24 +147,279 @@ namespace Nop.Services.Media
             if (height < 1)
                 height = 1;
 
-            //we invoke Math.Round to ensure that no white background is rendered - https://www.nopcommerce.com/boards/t/40616/image-resizing-bug.aspx
+            //we invoke Math.Round to ensure that no white background is rendered - https://www.nopcommerce.com/boards/topic/40616/image-resizing-bug
             return new Size((int)Math.Round(width), (int)Math.Round(height));
         }
+
+        /// <summary>
+        /// Loads a picture from file
+        /// </summary>
+        /// <param name="pictureId">Picture identifier</param>
+        /// <param name="mimeType">MIME type</param>
+        /// <returns>Picture binary</returns>
+        protected virtual async Task<byte[]> LoadPictureFromFileAsync(int pictureId, string mimeType)
+        {
+            var lastPart = await GetFileExtensionFromMimeTypeAsync(mimeType);
+            var fileName = $"{pictureId:0000000}_0.{lastPart}";
+            var filePath = await GetPictureLocalPathAsync(fileName);
+
+            return await _fileProvider.ReadAllBytesAsync(filePath);
+        }
+
+        /// <summary>
+        /// Save picture on file system
+        /// </summary>
+        /// <param name="pictureId">Picture identifier</param>
+        /// <param name="pictureBinary">Picture binary</param>
+        /// <param name="mimeType">MIME type</param>
+        protected virtual async Task SavePictureInFileAsync(int pictureId, byte[] pictureBinary, string mimeType)
+        {
+            var lastPart = await GetFileExtensionFromMimeTypeAsync(mimeType);
+            var fileName = $"{pictureId:0000000}_0.{lastPart}";
+            await _fileProvider.WriteAllBytesAsync(await GetPictureLocalPathAsync(fileName), pictureBinary);
+        }
+
+        /// <summary>
+        /// Delete a picture on file system
+        /// </summary>
+        /// <param name="picture">Picture</param>
+        protected virtual async Task DeletePictureOnFileSystemAsync(Picture picture)
+        {
+            if (picture == null)
+                throw new ArgumentNullException(nameof(picture));
+
+            var lastPart = await GetFileExtensionFromMimeTypeAsync(picture.MimeType);
+            var fileName = $"{picture.Id:0000000}_0.{lastPart}";
+            var filePath = await GetPictureLocalPathAsync(fileName);
+            _fileProvider.DeleteFile(filePath);
+        }
+
+        /// <summary>
+        /// Delete picture thumbs
+        /// </summary>
+        /// <param name="picture">Picture</param>
+        protected virtual async Task DeletePictureThumbsAsync(Picture picture)
+        {
+            var filter = $"{picture.Id:0000000}*.*";
+            var currentFiles = _fileProvider.GetFiles(_fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath), filter, false);
+            foreach (var currentFileName in currentFiles)
+            {
+                var thumbFilePath = await GetThumbLocalPathAsync(currentFileName);
+                _fileProvider.DeleteFile(thumbFilePath);
+            }
+        }
+
+        /// <summary>
+        /// Get picture (thumb) local path
+        /// </summary>
+        /// <param name="thumbFileName">Filename</param>
+        /// <returns>Local picture thumb path</returns>
+        protected virtual Task<string> GetThumbLocalPathAsync(string thumbFileName)
+        {
+            var thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath);
+
+            if (_mediaSettings.MultipleThumbDirectories)
+            {
+                //get the first two letters of the file name
+                var fileNameWithoutExtension = _fileProvider.GetFileNameWithoutExtension(thumbFileName);
+                if (fileNameWithoutExtension != null && fileNameWithoutExtension.Length > NopMediaDefaults.MultipleThumbDirectoriesLength)
+                {
+                    var subDirectoryName = fileNameWithoutExtension[0..NopMediaDefaults.MultipleThumbDirectoriesLength];
+                    thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath, subDirectoryName);
+                    _fileProvider.CreateDirectory(thumbsDirectoryPath);
+                }
+            }
+
+            var thumbFilePath = _fileProvider.Combine(thumbsDirectoryPath, thumbFileName);
+            return Task.FromResult(thumbFilePath);
+        }
+
+        /// <summary>
+        /// Get images path URL 
+        /// </summary>
+        /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
+        /// <returns></returns>
+        protected virtual Task<string> GetImagesPathUrlAsync(string storeLocation = null)
+        {
+            var pathBase = _httpContextAccessor.HttpContext.Request.PathBase.Value ?? string.Empty;
+            var imagesPathUrl = _mediaSettings.UseAbsoluteImagePath ? storeLocation : $"{pathBase}/";
+            imagesPathUrl = string.IsNullOrEmpty(imagesPathUrl) ? _webHelper.GetStoreLocation() : imagesPathUrl;
+            imagesPathUrl += "images/";
+
+            return Task.FromResult(imagesPathUrl);
+        }
+
+        /// <summary>
+        /// Get picture (thumb) URL 
+        /// </summary>
+        /// <param name="thumbFileName">Filename</param>
+        /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
+        /// <returns>Local picture thumb path</returns>
+        protected virtual async Task<string> GetThumbUrlAsync(string thumbFileName, string storeLocation = null)
+        {
+            var url = await GetImagesPathUrlAsync(storeLocation) + "thumbs/";
+
+            if (_mediaSettings.MultipleThumbDirectories)
+            {
+                //get the first two letters of the file name
+                var fileNameWithoutExtension = _fileProvider.GetFileNameWithoutExtension(thumbFileName);
+                if (fileNameWithoutExtension != null && fileNameWithoutExtension.Length > NopMediaDefaults.MultipleThumbDirectoriesLength)
+                {
+                    var subDirectoryName = fileNameWithoutExtension[0..NopMediaDefaults.MultipleThumbDirectoriesLength];
+                    url = url + subDirectoryName + "/";
+                }
+            }
+
+            url += thumbFileName;
+            return url;
+        }
+
+        /// <summary>
+        /// Get picture local path. Used when images stored on file system (not in the database)
+        /// </summary>
+        /// <param name="fileName">Filename</param>
+        /// <returns>Local picture path</returns>
+        protected virtual Task<string> GetPictureLocalPathAsync(string fileName)
+        {
+            return Task.FromResult(_fileProvider.GetAbsolutePath("images", fileName));
+        }
+
+        /// <summary>
+        /// Gets the loaded picture binary depending on picture storage settings
+        /// </summary>
+        /// <param name="picture">Picture</param>
+        /// <param name="fromDb">Load from database; otherwise, from file system</param>
+        /// <returns>Picture binary</returns>
+        protected virtual async Task<byte[]> LoadPictureBinaryAsync(Picture picture, bool fromDb)
+        {
+            if (picture == null)
+                throw new ArgumentNullException(nameof(picture));
+
+            var result = fromDb
+                ? (await GetPictureBinaryByPictureIdAsync(picture.Id))?.BinaryData ?? Array.Empty<byte>()
+                : await LoadPictureFromFileAsync(picture.Id, picture.MimeType);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Get a value indicating whether some file (thumb) already exists
+        /// </summary>
+        /// <param name="thumbFilePath">Thumb file path</param>
+        /// <param name="thumbFileName">Thumb file name</param>
+        /// <returns>Result</returns>
+        protected virtual Task<bool> GeneratedThumbExistsAsync(string thumbFilePath, string thumbFileName)
+        {
+            return Task.FromResult(_fileProvider.FileExists(thumbFilePath));
+        }
+
+        /// <summary>
+        /// Save a value indicating whether some file (thumb) already exists
+        /// </summary>
+        /// <param name="thumbFilePath">Thumb file path</param>
+        /// <param name="thumbFileName">Thumb file name</param>
+        /// <param name="mimeType">MIME type</param>
+        /// <param name="binary">Picture binary</param>
+        protected virtual async Task SaveThumbAsync(string thumbFilePath, string thumbFileName, string mimeType, byte[] binary)
+        {
+            //ensure \thumb directory exists
+            var thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath);
+            _fileProvider.CreateDirectory(thumbsDirectoryPath);
+
+            //save
+            await _fileProvider.WriteAllBytesAsync(thumbFilePath, binary);
+        }
+
+        /// <summary>
+        /// Updates the picture binary data
+        /// </summary>
+        /// <param name="picture">The picture object</param>
+        /// <param name="binaryData">The picture binary data</param>
+        /// <returns>Picture binary</returns>
+        protected virtual async Task<PictureBinary> UpdatePictureBinaryAsync(Picture picture, byte[] binaryData)
+        {
+            if (picture == null)
+                throw new ArgumentNullException(nameof(picture));
+
+            var pictureBinary = await GetPictureBinaryByPictureIdAsync(picture.Id);
+
+            var isNew = pictureBinary == null;
+
+            if (isNew)
+                pictureBinary = new PictureBinary
+                {
+                    PictureId = picture.Id
+                };
+
+            pictureBinary.BinaryData = binaryData;
+
+            if (isNew)
+                await _pictureBinaryRepository.InsertAsync(pictureBinary);
+            else
+                await _pictureBinaryRepository.UpdateAsync(pictureBinary);
+
+            return pictureBinary;
+        }
+
+        /// <summary>
+        /// Encode the image into a byte array in accordance with the specified image format
+        /// </summary>
+        /// <typeparam name="TPixel">Pixel data type</typeparam>
+        /// <param name="image">Image data</param>
+        /// <param name="imageFormat">Image format</param>
+        /// <param name="quality">Quality index that will be used to encode the image</param>
+        /// <returns>Image binary data</returns>
+        protected virtual async Task<byte[]> EncodeImageAsync<TPixel>(Image<TPixel> image, IImageFormat imageFormat, int? quality = null)
+            where TPixel : unmanaged, IPixel<TPixel>
+        {
+            await using var stream = new MemoryStream();
+            var imageEncoder = Default.ImageFormatsManager.FindEncoder(imageFormat);
+            switch (imageEncoder)
+            {
+                case JpegEncoder jpegEncoder:
+                    jpegEncoder.Subsample = JpegSubsample.Ratio444;
+                    jpegEncoder.Quality = quality ?? _mediaSettings.DefaultImageQuality;
+                    await jpegEncoder.EncodeAsync(image, stream, default);
+                    break;
+
+                case PngEncoder pngEncoder:
+                    pngEncoder.ColorType = PngColorType.RgbWithAlpha;
+                    await pngEncoder.EncodeAsync(image, stream, default);
+                    break;
+
+                case BmpEncoder bmpEncoder:
+                    bmpEncoder.BitsPerPixel = BmpBitsPerPixel.Pixel32;
+                    await bmpEncoder.EncodeAsync(image, stream, default);
+                    break;
+
+                case GifEncoder gifEncoder:
+                    await gifEncoder.EncodeAsync(image, stream, default);
+                    break;
+
+                default:
+                    await imageEncoder.EncodeAsync(image, stream, default);
+                    break;
+            }
+
+            return stream.ToArray();
+        }
+
+        #endregion
+
+        #region Getting picture local path/URL methods
 
         /// <summary>
         /// Returns the file extension from mime type.
         /// </summary>
         /// <param name="mimeType">Mime type</param>
         /// <returns>File extension</returns>
-        protected virtual string GetFileExtensionFromMimeType(string mimeType)
+        public virtual Task<string> GetFileExtensionFromMimeTypeAsync(string mimeType)
         {
             if (mimeType == null)
-                return null;
-
-            //TODO use FileExtensionContentTypeProvider to get file extension
+                return Task.FromResult<string>(null);
 
             var parts = mimeType.Split('/');
-            var lastPart = parts[parts.Length - 1];
+            var lastPart = parts[^1];
             switch (lastPart)
             {
                 case "pjpeg":
@@ -163,264 +433,17 @@ namespace Nop.Services.Media
                     break;
             }
 
-            return lastPart;
-        }
-
-        /// <summary>
-        /// Loads a picture from file
-        /// </summary>
-        /// <param name="pictureId">Picture identifier</param>
-        /// <param name="mimeType">MIME type</param>
-        /// <returns>Picture binary</returns>
-        protected virtual byte[] LoadPictureFromFile(int pictureId, string mimeType)
-        {
-            var lastPart = GetFileExtensionFromMimeType(mimeType);
-            var fileName = $"{pictureId:0000000}_0.{lastPart}";
-            var filePath = GetPictureLocalPath(fileName);
-
-            return _fileProvider.ReadAllBytes(filePath);
-        }
-
-        /// <summary>
-        /// Save picture on file system
-        /// </summary>
-        /// <param name="pictureId">Picture identifier</param>
-        /// <param name="pictureBinary">Picture binary</param>
-        /// <param name="mimeType">MIME type</param>
-        protected virtual void SavePictureInFile(int pictureId, byte[] pictureBinary, string mimeType)
-        {
-            var lastPart = GetFileExtensionFromMimeType(mimeType);
-            var fileName = $"{pictureId:0000000}_0.{lastPart}";
-            _fileProvider.WriteAllBytes(GetPictureLocalPath(fileName), pictureBinary);
-        }
-
-        /// <summary>
-        /// Delete a picture on file system
-        /// </summary>
-        /// <param name="picture">Picture</param>
-        protected virtual void DeletePictureOnFileSystem(Picture picture)
-        {
-            if (picture == null)
-                throw new ArgumentNullException(nameof(picture));
-
-            var lastPart = GetFileExtensionFromMimeType(picture.MimeType);
-            var fileName = $"{picture.Id:0000000}_0.{lastPart}";
-            var filePath = GetPictureLocalPath(fileName);
-            _fileProvider.DeleteFile(filePath);
-        }
-
-        /// <summary>
-        /// Delete picture thumbs
-        /// </summary>
-        /// <param name="picture">Picture</param>
-        protected virtual void DeletePictureThumbs(Picture picture)
-        {
-            var filter = $"{picture.Id:0000000}*.*";
-            var currentFiles = _fileProvider.GetFiles(_fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath), filter, false);
-            foreach (var currentFileName in currentFiles)
-            {
-                var thumbFilePath = GetThumbLocalPath(currentFileName);
-                _fileProvider.DeleteFile(thumbFilePath);
-            }
-        }
-
-        /// <summary>
-        /// Get picture (thumb) local path
-        /// </summary>
-        /// <param name="thumbFileName">Filename</param>
-        /// <returns>Local picture thumb path</returns>
-        protected virtual string GetThumbLocalPath(string thumbFileName)
-        {
-            var thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath);
-
-            if (_mediaSettings.MultipleThumbDirectories)
-            {
-                //get the first two letters of the file name
-                var fileNameWithoutExtension = _fileProvider.GetFileNameWithoutExtension(thumbFileName);
-                if (fileNameWithoutExtension != null && fileNameWithoutExtension.Length > NopMediaDefaults.MultipleThumbDirectoriesLength)
-                {
-                    var subDirectoryName = fileNameWithoutExtension.Substring(0, NopMediaDefaults.MultipleThumbDirectoriesLength);
-                    thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath, subDirectoryName);
-                    _fileProvider.CreateDirectory(thumbsDirectoryPath);
-                }
-            }
-
-            var thumbFilePath = _fileProvider.Combine(thumbsDirectoryPath, thumbFileName);
-            return thumbFilePath;
-        }
-
-        /// <summary>
-        /// Get picture (thumb) URL 
-        /// </summary>
-        /// <param name="thumbFileName">Filename</param>
-        /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
-        /// <returns>Local picture thumb path</returns>
-        protected virtual string GetThumbUrl(string thumbFileName, string storeLocation = null)
-        {
-            storeLocation = !string.IsNullOrEmpty(storeLocation)
-                                    ? storeLocation
-                                    : _webHelper.GetStoreLocation();
-            var url = storeLocation + "images/thumbs/";
-
-            if (_mediaSettings.MultipleThumbDirectories)
-            {
-                //get the first two letters of the file name
-                var fileNameWithoutExtension = _fileProvider.GetFileNameWithoutExtension(thumbFileName);
-                if (fileNameWithoutExtension != null && fileNameWithoutExtension.Length > NopMediaDefaults.MultipleThumbDirectoriesLength)
-                {
-                    var subDirectoryName = fileNameWithoutExtension.Substring(0, NopMediaDefaults.MultipleThumbDirectoriesLength);
-                    url = url + subDirectoryName + "/";
-                }
-            }
-
-            url = url + thumbFileName;
-            return url;
-        }
-
-        /// <summary>
-        /// Get picture local path. Used when images stored on file system (not in the database)
-        /// </summary>
-        /// <param name="fileName">Filename</param>
-        /// <returns>Local picture path</returns>
-        protected virtual string GetPictureLocalPath(string fileName)
-        {
-            return _fileProvider.GetAbsolutePath("images", fileName);
+            return Task.FromResult(lastPart);
         }
 
         /// <summary>
         /// Gets the loaded picture binary depending on picture storage settings
         /// </summary>
         /// <param name="picture">Picture</param>
-        /// <param name="fromDb">Load from database; otherwise, from file system</param>
         /// <returns>Picture binary</returns>
-        protected virtual byte[] LoadPictureBinary(Picture picture, bool fromDb)
+        public virtual async Task<byte[]> LoadPictureBinaryAsync(Picture picture)
         {
-            if (picture == null)
-                throw new ArgumentNullException(nameof(picture));
-
-            var result = fromDb
-                ? picture.PictureBinary?.BinaryData ?? new byte[0]
-                : LoadPictureFromFile(picture.Id, picture.MimeType);
-
-            return result;
-        }
-
-        /// <summary>
-        /// Get a value indicating whether some file (thumb) already exists
-        /// </summary>
-        /// <param name="thumbFilePath">Thumb file path</param>
-        /// <param name="thumbFileName">Thumb file name</param>
-        /// <returns>Result</returns>
-        protected virtual bool GeneratedThumbExists(string thumbFilePath, string thumbFileName)
-        {
-            return _fileProvider.FileExists(thumbFilePath);
-        }
-
-        /// <summary>
-        /// Save a value indicating whether some file (thumb) already exists
-        /// </summary>
-        /// <param name="thumbFilePath">Thumb file path</param>
-        /// <param name="thumbFileName">Thumb file name</param>
-        /// <param name="mimeType">MIME type</param>
-        /// <param name="binary">Picture binary</param>
-        protected virtual void SaveThumb(string thumbFilePath, string thumbFileName, string mimeType, byte[] binary)
-        {
-            //ensure \thumb directory exists
-            var thumbsDirectoryPath = _fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath);
-            _fileProvider.CreateDirectory(thumbsDirectoryPath);
-
-            //save
-            _fileProvider.WriteAllBytes(thumbFilePath, binary);
-        }
-
-        /// <summary>
-        /// Encode the image into a byte array in accordance with the specified image format
-        /// </summary>
-        /// <typeparam name="T">Pixel data type</typeparam>
-        /// <param name="image">Image data</param>
-        /// <param name="imageFormat">Image format</param>
-        /// <param name="quality">Quality index that will be used to encode the image</param>
-        /// <returns>Image binary data</returns>
-        protected virtual byte[] EncodeImage<T>(Image<T> image, IImageFormat imageFormat, int? quality = null) where T : struct, IPixel<T>
-        {
-            using (var stream = new MemoryStream())
-            {
-                var imageEncoder = Default.ImageFormatsManager.FindEncoder(imageFormat);
-                switch (imageEncoder)
-                {
-                    case JpegEncoder jpegEncoder:
-                        jpegEncoder.IgnoreMetadata = true;
-                        jpegEncoder.Quality = quality ?? _mediaSettings.DefaultImageQuality;
-                        jpegEncoder.Encode(image, stream);
-                        break;
-
-                    case PngEncoder pngEncoder:
-                        pngEncoder.PngColorType = PngColorType.RgbWithAlpha;
-                        pngEncoder.Encode(image, stream);
-                        break;
-
-                    case BmpEncoder bmpEncoder:
-                        bmpEncoder.BitsPerPixel = BmpBitsPerPixel.Pixel32;
-                        bmpEncoder.Encode(image, stream);
-                        break;
-
-                    case GifEncoder gifEncoder:
-                        gifEncoder.IgnoreMetadata = true;
-                        gifEncoder.Encode(image, stream);
-                        break;
-
-                    default:
-                        imageEncoder.Encode(image, stream);
-                        break;
-                }
-
-                return stream.ToArray();
-            }
-        }
-
-        /// <summary>
-        /// Updates the picture binary data
-        /// </summary>
-        /// <param name="picture">The picture object</param>
-        /// <param name="binaryData">The picture binary data</param>
-        /// <returns>Picture binary</returns>
-        protected virtual PictureBinary UpdatePictureBinary(Picture picture, byte[] binaryData)
-        {
-            if (picture == null)
-                throw new ArgumentNullException(nameof(picture));
-
-            var pictureBinary = picture.PictureBinary;
-
-            var isNew = pictureBinary == null;
-
-            if (isNew)
-                pictureBinary = new PictureBinary
-                {
-                    PictureId = picture.Id
-                };
-
-            pictureBinary.BinaryData = binaryData;
-
-            if (isNew)
-                _pictureBinaryRepository.Insert(pictureBinary);
-            else
-                _pictureBinaryRepository.Update(pictureBinary);
-
-            return pictureBinary;
-        }
-
-        #endregion
-
-        #region Getting picture local path/URL methods
-
-        /// <summary>
-        /// Gets the loaded picture binary depending on picture storage settings
-        /// </summary>
-        /// <param name="picture">Picture</param>
-        /// <returns>Picture binary</returns>
-        public virtual byte[] LoadPictureBinary(Picture picture)
-        {
-            return LoadPictureBinary(picture, StoreInDb);
+            return await LoadPictureBinaryAsync(picture, await IsStoreInDbAsync());
         }
 
         /// <summary>
@@ -428,9 +451,9 @@ namespace Nop.Services.Media
         /// </summary>
         /// <param name="name">Name</param>
         /// <returns>Result</returns>
-        public virtual string GetPictureSeName(string name)
+        public virtual async Task<string> GetPictureSeNameAsync(string name)
         {
-            return _urlRecordService.GetSeName(name, true, false);
+            return await _urlRecordService.GetSeNameAsync(name, true, false);
         }
 
         /// <summary>
@@ -440,58 +463,40 @@ namespace Nop.Services.Media
         /// <param name="defaultPictureType">Default picture type</param>
         /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
         /// <returns>Picture URL</returns>
-        public virtual string GetDefaultPictureUrl(int targetSize = 0,
+        public virtual async Task<string> GetDefaultPictureUrlAsync(int targetSize = 0,
             PictureType defaultPictureType = PictureType.Entity,
             string storeLocation = null)
         {
-            string defaultImageFileName;
-            switch (defaultPictureType)
+            var defaultImageFileName = defaultPictureType switch
             {
-                case PictureType.Avatar:
-                    defaultImageFileName = _settingService.GetSettingByKey("Media.Customer.DefaultAvatarImageName", NopMediaDefaults.DefaultAvatarFileName);
-                    break;
-                case PictureType.Entity:
-                default:
-                    defaultImageFileName = _settingService.GetSettingByKey("Media.DefaultImageName", NopMediaDefaults.DefaultImageFileName);
-                    break;
-            }
-
-            var filePath = GetPictureLocalPath(defaultImageFileName);
+                PictureType.Avatar => await _settingService.GetSettingByKeyAsync("Media.Customer.DefaultAvatarImageName", NopMediaDefaults.DefaultAvatarFileName),
+                _ => await _settingService.GetSettingByKeyAsync("Media.DefaultImageName", NopMediaDefaults.DefaultImageFileName),
+            };
+            var filePath = await GetPictureLocalPathAsync(defaultImageFileName);
             if (!_fileProvider.FileExists(filePath))
             {
                 return string.Empty;
             }
 
             if (targetSize == 0)
-            {
-                var url = (!string.IsNullOrEmpty(storeLocation)
-                                 ? storeLocation
-                                 : _webHelper.GetStoreLocation())
-                                 + "images/" + defaultImageFileName;
-                return url;
-            }
-            else
-            {
-                var fileExtension = _fileProvider.GetFileExtension(filePath);
-                var thumbFileName = $"{_fileProvider.GetFileNameWithoutExtension(filePath)}_{targetSize}{fileExtension}";
-                var thumbFilePath = GetThumbLocalPath(thumbFileName);
-                if (!GeneratedThumbExists(thumbFilePath, thumbFileName))
-                {
-                    using (var image = Image.Load(filePath, out var imageFormat))
-                    {
-                        image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
-                        {
-                            Mode = ResizeMode.Max,
-                            Size = CalculateDimensions(image.Size(), targetSize)
-                        }));
-                        var pictureBinary = EncodeImage(image, imageFormat);
-                        SaveThumb(thumbFilePath, thumbFileName, imageFormat.DefaultMimeType, pictureBinary);
-                    }
-                }
+                return await GetImagesPathUrlAsync(storeLocation) + defaultImageFileName;
 
-                var url = GetThumbUrl(thumbFileName, storeLocation);
-                return url;
+            var fileExtension = _fileProvider.GetFileExtension(filePath);
+            var thumbFileName = $"{_fileProvider.GetFileNameWithoutExtension(filePath)}_{targetSize}{fileExtension}";
+            var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
+            if (!await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
+            {
+                using var image = Image.Load<Rgba32>(filePath, out var imageFormat);
+                image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
+                {
+                    Mode = ResizeMode.Max,
+                    Size = CalculateDimensions(image.Size(), targetSize)
+                }));
+                var pictureBinary = await EncodeImageAsync(image, imageFormat);
+                await SaveThumbAsync(thumbFilePath, thumbFileName, imageFormat.DefaultMimeType, pictureBinary);
             }
+
+            return await GetThumbUrlAsync(thumbFileName, storeLocation);
         }
 
         /// <summary>
@@ -503,51 +508,45 @@ namespace Nop.Services.Media
         /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
         /// <param name="defaultPictureType">Default picture type</param>
         /// <returns>Picture URL</returns>
-        public virtual string GetPictureUrl(int pictureId,
+        public virtual async Task<string> GetPictureUrlAsync(int pictureId,
             int targetSize = 0,
             bool showDefaultPicture = true,
             string storeLocation = null,
             PictureType defaultPictureType = PictureType.Entity)
         {
-            var picture = GetPictureById(pictureId);
-            return GetPictureUrl(picture, targetSize, showDefaultPicture, storeLocation, defaultPictureType);
+            var picture = await GetPictureByIdAsync(pictureId);
+            return (await GetPictureUrlAsync(picture, targetSize, showDefaultPicture, storeLocation, defaultPictureType)).Url;
         }
 
         /// <summary>
         /// Get a picture URL
         /// </summary>
-        /// <param name="picture">Picture instance</param>
+        /// <param name="picture">Reference instance of Picture</param>
         /// <param name="targetSize">The target picture size (longest side)</param>
         /// <param name="showDefaultPicture">A value indicating whether the default picture is shown</param>
         /// <param name="storeLocation">Store location URL; null to use determine the current store location automatically</param>
         /// <param name="defaultPictureType">Default picture type</param>
         /// <returns>Picture URL</returns>
-        public virtual string GetPictureUrl(Picture picture,
+        public virtual async Task<(string Url, Picture Picture)> GetPictureUrlAsync(Picture picture,
             int targetSize = 0,
             bool showDefaultPicture = true,
             string storeLocation = null,
             PictureType defaultPictureType = PictureType.Entity)
         {
-            var url = string.Empty;
+            if (picture == null)
+                return showDefaultPicture ? (await GetDefaultPictureUrlAsync(targetSize, defaultPictureType, storeLocation), null) : (string.Empty, (Picture)null);
+
             byte[] pictureBinary = null;
-            if (picture != null)
-                pictureBinary = LoadPictureBinary(picture);
-            if (picture == null || pictureBinary == null || pictureBinary.Length == 0)
-            {
-                if (showDefaultPicture)
-                {
-                    url = GetDefaultPictureUrl(targetSize, defaultPictureType, storeLocation);
-                }
-
-                return url;
-            }
-
             if (picture.IsNew)
             {
-                DeletePictureThumbs(picture);
+                await DeletePictureThumbsAsync(picture);
+                pictureBinary = await LoadPictureBinaryAsync(picture);
+
+                if ((pictureBinary?.Length ?? 0) == 0)
+                    return showDefaultPicture ? (await GetDefaultPictureUrlAsync(targetSize, defaultPictureType, storeLocation), picture) : (string.Empty, picture);
 
                 //we do not validate picture binary here to ensure that no exception ("Parameter is not valid") will be thrown
-                picture = UpdatePicture(picture.Id,
+                picture = await UpdatePictureAsync(picture.Id,
                     pictureBinary,
                     picture.MimeType,
                     picture.SeoFilename,
@@ -559,7 +558,7 @@ namespace Nop.Services.Media
 
             var seoFileName = picture.SeoFilename; // = GetPictureSeName(picture.SeoFilename); //just for sure
 
-            var lastPart = GetFileExtensionFromMimeType(picture.MimeType);
+            var lastPart = await GetFileExtensionFromMimeTypeAsync(picture.MimeType);
             string thumbFileName;
             if (targetSize == 0)
             {
@@ -574,49 +573,54 @@ namespace Nop.Services.Media
                     : $"{picture.Id:0000000}_{targetSize}.{lastPart}";
             }
 
-            var thumbFilePath = GetThumbLocalPath(thumbFileName);
+            var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
 
-            //the named mutex helps to avoid creating the same files in different threads,
+            if (await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
+                return (await GetThumbUrlAsync(thumbFileName, storeLocation), picture);
+
+            //the named semaphore helps to avoid creating the same files in different threads,
             //and does not decrease performance significantly, because the code is blocked only for the specific file.
-            using (var mutex = new Mutex(false, thumbFileName))
+            using (var semaphore = new Semaphore(1, 1, thumbFileName))
             {
-                if (!GeneratedThumbExists(thumbFilePath, thumbFileName))
-                {
-                    mutex.WaitOne();
+                semaphore.WaitOne();
 
+                try
+                {
                     //check, if the file was created, while we were waiting for the release of the mutex.
-                    if (!GeneratedThumbExists(thumbFilePath, thumbFileName))
+                    if (!await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
                     {
+                        pictureBinary ??= await LoadPictureBinaryAsync(picture);
+
+                        if ((pictureBinary?.Length ?? 0) == 0)
+                            return showDefaultPicture ? (await GetDefaultPictureUrlAsync(targetSize, defaultPictureType, storeLocation), picture) : (string.Empty, picture);
+
                         byte[] pictureBinaryResized;
                         if (targetSize != 0)
                         {
                             //resizing required
-                            using (var image = Image.Load(pictureBinary, out var imageFormat))
+                            using var image = Image.Load<Rgba32>(pictureBinary, out var imageFormat);
+                            image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
                             {
-                                image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
-                                {
-                                    Mode = ResizeMode.Max,
-                                    Size = CalculateDimensions(image.Size(), targetSize)
-                                }));
+                                Mode = ResizeMode.Max,
+                                Size = CalculateDimensions(image.Size(), targetSize)
+                            }));
 
-                                pictureBinaryResized = EncodeImage(image, imageFormat);
-                            }
+                            pictureBinaryResized = await EncodeImageAsync(image, imageFormat);
                         }
                         else
-                        {
                             //create a copy of pictureBinary
                             pictureBinaryResized = pictureBinary.ToArray();
-                        }
 
-                        SaveThumb(thumbFilePath, thumbFileName, picture.MimeType, pictureBinaryResized);
+                        await SaveThumbAsync(thumbFilePath, thumbFileName, picture.MimeType, pictureBinaryResized);
                     }
-
-                    mutex.ReleaseMutex();
+                }
+                finally
+                {
+                    semaphore.Release();
                 }
             }
 
-            url = GetThumbUrl(thumbFileName, storeLocation);
-            return url;
+            return (await GetThumbUrlAsync(thumbFileName, storeLocation), picture);
         }
 
         /// <summary>
@@ -626,13 +630,13 @@ namespace Nop.Services.Media
         /// <param name="targetSize">The target picture size (longest side)</param>
         /// <param name="showDefaultPicture">A value indicating whether the default picture is shown</param>
         /// <returns></returns>
-        public virtual string GetThumbLocalPath(Picture picture, int targetSize = 0, bool showDefaultPicture = true)
+        public virtual async Task<string> GetThumbLocalPathAsync(Picture picture, int targetSize = 0, bool showDefaultPicture = true)
         {
-            var url = GetPictureUrl(picture, targetSize, showDefaultPicture);
+            var (url, _) = await GetPictureUrlAsync(picture, targetSize, showDefaultPicture);
             if (string.IsNullOrEmpty(url))
                 return string.Empty;
 
-            return GetThumbLocalPath(_fileProvider.GetFileName(url));
+            return await GetThumbLocalPathAsync(_fileProvider.GetFileName(url));
         }
 
         #endregion
@@ -644,50 +648,48 @@ namespace Nop.Services.Media
         /// </summary>
         /// <param name="pictureId">Picture identifier</param>
         /// <returns>Picture</returns>
-        public virtual Picture GetPictureById(int pictureId)
+        public virtual async Task<Picture> GetPictureByIdAsync(int pictureId)
         {
-            if (pictureId == 0)
-                return null;
-
-            return _pictureRepository.GetById(pictureId);
+            return await _pictureRepository.GetByIdAsync(pictureId, cache => default);
         }
 
         /// <summary>
         /// Deletes a picture
         /// </summary>
         /// <param name="picture">Picture</param>
-        public virtual void DeletePicture(Picture picture)
+        public virtual async Task DeletePictureAsync(Picture picture)
         {
             if (picture == null)
                 throw new ArgumentNullException(nameof(picture));
 
             //delete thumbs
-            DeletePictureThumbs(picture);
+            await DeletePictureThumbsAsync(picture);
 
             //delete from file system
-            if (!StoreInDb)
-                DeletePictureOnFileSystem(picture);
+            if (!await IsStoreInDbAsync())
+                await DeletePictureOnFileSystemAsync(picture);
 
             //delete from database
-            _pictureRepository.Delete(picture);
-
-            //event notification
-            _eventPublisher.EntityDeleted(picture);
+            await _pictureRepository.DeleteAsync(picture);
         }
 
         /// <summary>
         /// Gets a collection of pictures
         /// </summary>
+        /// <param name="virtualPath">Virtual path</param>
         /// <param name="pageIndex">Current page</param>
         /// <param name="pageSize">Items on each page</param>
         /// <returns>Paged list of pictures</returns>
-        public virtual IPagedList<Picture> GetPictures(int pageIndex = 0, int pageSize = int.MaxValue)
+        public virtual async Task<IPagedList<Picture>> GetPicturesAsync(string virtualPath = "", int pageIndex = 0, int pageSize = int.MaxValue)
         {
-            var query = from p in _pictureRepository.Table
-                        orderby p.Id descending
-                        select p;
-            var pics = new PagedList<Picture>(query, pageIndex, pageSize);
-            return pics;
+            var query = _pictureRepository.Table;
+
+            if (!string.IsNullOrEmpty(virtualPath))
+                query = virtualPath.EndsWith('/') ? query.Where(p => p.VirtualPath.StartsWith(virtualPath) || p.VirtualPath == virtualPath.TrimEnd('/')) : query.Where(p => p.VirtualPath == virtualPath);
+
+            query = query.OrderByDescending(p => p.Id);
+
+            return await query.ToPagedListAsync(pageIndex, pageSize);
         }
 
         /// <summary>
@@ -696,7 +698,7 @@ namespace Nop.Services.Media
         /// <param name="productId">Product identifier</param>
         /// <param name="recordsToReturn">Number of records to return. 0 if you want to get all items</param>
         /// <returns>Pictures</returns>
-        public virtual IList<Picture> GetPicturesByProductId(int productId, int recordsToReturn = 0)
+        public virtual async Task<IList<Picture>> GetPicturesByProductIdAsync(int productId, int recordsToReturn = 0)
         {
             if (productId == 0)
                 return new List<Picture>();
@@ -710,7 +712,8 @@ namespace Nop.Services.Media
             if (recordsToReturn > 0)
                 query = query.Take(recordsToReturn);
 
-            var pics = query.ToList();
+            var pics = await query.ToListAsync();
+
             return pics;
         }
 
@@ -725,7 +728,7 @@ namespace Nop.Services.Media
         /// <param name="isNew">A value indicating whether the picture is new</param>
         /// <param name="validateBinary">A value indicating whether to validated provided picture binary</param>
         /// <returns>Picture</returns>
-        public virtual Picture InsertPicture(byte[] pictureBinary, string mimeType, string seoFilename,
+        public virtual async Task<Picture> InsertPictureAsync(byte[] pictureBinary, string mimeType, string seoFilename,
             string altAttribute = null, string titleAttribute = null,
             bool isNew = true, bool validateBinary = true)
         {
@@ -735,7 +738,7 @@ namespace Nop.Services.Media
             seoFilename = CommonHelper.EnsureMaximumLength(seoFilename, 100);
 
             if (validateBinary)
-                pictureBinary = ValidatePicture(pictureBinary, mimeType);
+                pictureBinary = await ValidatePictureAsync(pictureBinary, mimeType);
 
             var picture = new Picture
             {
@@ -745,14 +748,95 @@ namespace Nop.Services.Media
                 TitleAttribute = titleAttribute,
                 IsNew = isNew
             };
-            _pictureRepository.Insert(picture);
-            UpdatePictureBinary(picture, StoreInDb ? pictureBinary : new byte[0]);
+            await _pictureRepository.InsertAsync(picture);
+            await UpdatePictureBinaryAsync(picture, await IsStoreInDbAsync() ? pictureBinary : Array.Empty<byte>());
 
-            if (!StoreInDb)
-                SavePictureInFile(picture.Id, pictureBinary, mimeType);
+            if (!await IsStoreInDbAsync())
+                await SavePictureInFileAsync(picture.Id, pictureBinary, mimeType);
 
-            //event notification
-            _eventPublisher.EntityInserted(picture);
+            return picture;
+        }
+
+        /// <summary>
+        /// Inserts a picture
+        /// </summary>
+        /// <param name="formFile">Form file</param>
+        /// <param name="defaultFileName">File name which will be use if IFormFile.FileName not present</param>
+        /// <param name="virtualPath">Virtual path</param>
+        /// <returns>Picture</returns>
+        public virtual async Task<Picture> InsertPictureAsync(IFormFile formFile, string defaultFileName = "", string virtualPath = "")
+        {
+            var imgExt = new List<string>
+            {
+                ".bmp",
+                ".gif",
+                ".jpeg",
+                ".jpg",
+                ".jpe",
+                ".jfif",
+                ".pjpeg",
+                ".pjp",
+                ".png",
+                ".tiff",
+                ".tif"
+            } as IReadOnlyCollection<string>;
+
+            var fileName = formFile.FileName;
+            if (string.IsNullOrEmpty(fileName) && !string.IsNullOrEmpty(defaultFileName))
+                fileName = defaultFileName;
+
+            //remove path (passed in IE)
+            fileName = _fileProvider.GetFileName(fileName);
+
+            var contentType = formFile.ContentType;
+
+            var fileExtension = _fileProvider.GetFileExtension(fileName);
+            if (!string.IsNullOrEmpty(fileExtension))
+                fileExtension = fileExtension.ToLowerInvariant();
+
+            if (imgExt.All(ext => !ext.Equals(fileExtension, StringComparison.CurrentCultureIgnoreCase)))
+                return null;
+
+            //contentType is not always available 
+            //that's why we manually update it here
+            //http://www.sfsu.edu/training/mimetype.htm
+            if (string.IsNullOrEmpty(contentType))
+            {
+                switch (fileExtension)
+                {
+                    case ".bmp":
+                        contentType = MimeTypes.ImageBmp;
+                        break;
+                    case ".gif":
+                        contentType = MimeTypes.ImageGif;
+                        break;
+                    case ".jpeg":
+                    case ".jpg":
+                    case ".jpe":
+                    case ".jfif":
+                    case ".pjpeg":
+                    case ".pjp":
+                        contentType = MimeTypes.ImageJpeg;
+                        break;
+                    case ".png":
+                        contentType = MimeTypes.ImagePng;
+                        break;
+                    case ".tiff":
+                    case ".tif":
+                        contentType = MimeTypes.ImageTiff;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            var picture = await InsertPictureAsync(await _downloadService.GetDownloadBitsAsync(formFile), contentType, _fileProvider.GetFileNameWithoutExtension(fileName));
+
+            if (string.IsNullOrEmpty(virtualPath))
+                return picture;
+
+            picture.VirtualPath = _fileProvider.GetVirtualPath(virtualPath);
+            await UpdatePictureAsync(picture);
 
             return picture;
         }
@@ -769,7 +853,7 @@ namespace Nop.Services.Media
         /// <param name="isNew">A value indicating whether the picture is new</param>
         /// <param name="validateBinary">A value indicating whether to validated provided picture binary</param>
         /// <returns>Picture</returns>
-        public virtual Picture UpdatePicture(int pictureId, byte[] pictureBinary, string mimeType,
+        public virtual async Task<Picture> UpdatePictureAsync(int pictureId, byte[] pictureBinary, string mimeType,
             string seoFilename, string altAttribute = null, string titleAttribute = null,
             bool isNew = true, bool validateBinary = true)
         {
@@ -779,15 +863,15 @@ namespace Nop.Services.Media
             seoFilename = CommonHelper.EnsureMaximumLength(seoFilename, 100);
 
             if (validateBinary)
-                pictureBinary = ValidatePicture(pictureBinary, mimeType);
+                pictureBinary = await ValidatePictureAsync(pictureBinary, mimeType);
 
-            var picture = GetPictureById(pictureId);
+            var picture = await GetPictureByIdAsync(pictureId);
             if (picture == null)
                 return null;
 
             //delete old thumbs if a picture has been changed
             if (seoFilename != picture.SeoFilename)
-                DeletePictureThumbs(picture);
+                await DeletePictureThumbsAsync(picture);
 
             picture.MimeType = mimeType;
             picture.SeoFilename = seoFilename;
@@ -795,16 +879,51 @@ namespace Nop.Services.Media
             picture.TitleAttribute = titleAttribute;
             picture.IsNew = isNew;
 
-            _pictureRepository.Update(picture);
-            UpdatePictureBinary(picture, StoreInDb ? pictureBinary : new byte[0]);
+            await _pictureRepository.UpdateAsync(picture);
+            await UpdatePictureBinaryAsync(picture, await IsStoreInDbAsync() ? pictureBinary : Array.Empty<byte>());
 
-            if (!StoreInDb)
-                SavePictureInFile(picture.Id, pictureBinary, mimeType);
-
-            //event notification
-            _eventPublisher.EntityUpdated(picture);
+            if (!await IsStoreInDbAsync())
+                await SavePictureInFileAsync(picture.Id, pictureBinary, mimeType);
 
             return picture;
+        }
+
+        /// <summary>
+        /// Updates the picture
+        /// </summary>
+        /// <param name="picture">The picture to update</param>
+        /// <returns>Picture</returns>
+        public virtual async Task<Picture> UpdatePictureAsync(Picture picture)
+        {
+            if (picture == null)
+                return null;
+
+            var seoFilename = CommonHelper.EnsureMaximumLength(picture.SeoFilename, 100);
+
+            //delete old thumbs if a picture has been changed
+            if (seoFilename != picture.SeoFilename)
+                await DeletePictureThumbsAsync(picture);
+
+            picture.SeoFilename = seoFilename;
+
+            await _pictureRepository.UpdateAsync(picture);
+            await UpdatePictureBinaryAsync(picture, await IsStoreInDbAsync() ? (await GetPictureBinaryByPictureIdAsync(picture.Id)).BinaryData : Array.Empty<byte>());
+
+            if (!await IsStoreInDbAsync())
+                await SavePictureInFileAsync(picture.Id, (await GetPictureBinaryByPictureIdAsync(picture.Id)).BinaryData, picture.MimeType);
+
+            return picture;
+        }
+
+        /// <summary>
+        /// Get product picture binary by picture identifier
+        /// </summary>
+        /// <param name="pictureId">The picture identifier</param>
+        /// <returns>Picture binary</returns>
+        public virtual async Task<PictureBinary> GetPictureBinaryByPictureIdAsync(int pictureId)
+        {
+            return await _pictureBinaryRepository.Table
+                .FirstOrDefaultAsync(pb => pb.PictureId == pictureId);
         }
 
         /// <summary>
@@ -813,9 +932,9 @@ namespace Nop.Services.Media
         /// <param name="pictureId">The picture identifier</param>
         /// <param name="seoFilename">The SEO filename</param>
         /// <returns>Picture</returns>
-        public virtual Picture SetSeoFilename(int pictureId, string seoFilename)
+        public virtual async Task<Picture> SetSeoFilenameAsync(int pictureId, string seoFilename)
         {
-            var picture = GetPictureById(pictureId);
+            var picture = await GetPictureByIdAsync(pictureId);
             if (picture == null)
                 throw new ArgumentException("No picture found with the specified id");
 
@@ -823,8 +942,8 @@ namespace Nop.Services.Media
             if (seoFilename != picture.SeoFilename)
             {
                 //update picture
-                picture = UpdatePicture(picture.Id,
-                    LoadPictureBinary(picture),
+                picture = await UpdatePictureAsync(picture.Id,
+                    await LoadPictureBinaryAsync(picture),
                     picture.MimeType,
                     seoFilename,
                     picture.AltAttribute,
@@ -842,22 +961,20 @@ namespace Nop.Services.Media
         /// <param name="pictureBinary">Picture binary</param>
         /// <param name="mimeType">MIME type</param>
         /// <returns>Picture binary or throws an exception</returns>
-        public virtual byte[] ValidatePicture(byte[] pictureBinary, string mimeType)
+        public virtual async Task<byte[]> ValidatePictureAsync(byte[] pictureBinary, string mimeType)
         {
-            using (var image = Image.Load(pictureBinary, out var imageFormat))
+            using var image = Image.Load<Rgba32>(pictureBinary, out var imageFormat);
+            //resize the image in accordance with the maximum size
+            if (Math.Max(image.Height, image.Width) > _mediaSettings.MaximumImageSize)
             {
-                //resize the image in accordance with the maximum size
-                if (Math.Max(image.Height, image.Width) > _mediaSettings.MaximumImageSize)
+                image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
                 {
-                    image.Mutate(imageProcess => imageProcess.Resize(new ResizeOptions
-                    {
-                        Mode = ResizeMode.Max,
-                        Size = new Size(_mediaSettings.MaximumImageSize)
-                    }));
-                }
-
-                return EncodeImage(image, imageFormat);
+                    Mode = ResizeMode.Max,
+                    Size = new Size(_mediaSettings.MaximumImageSize)
+                }));
             }
+
+            return await EncodeImageAsync(image, imageFormat);
         }
 
         /// <summary>
@@ -865,16 +982,20 @@ namespace Nop.Services.Media
         /// </summary>
         /// <param name="picturesIds">Pictures Ids</param>
         /// <returns></returns>
-        public IDictionary<int, string> GetPicturesHash(int[] picturesIds)
+        public async Task<IDictionary<int, string>> GetPicturesHashAsync(int[] picturesIds)
         {
-            var supportedLengthOfBinaryHash = _dataProvider.SupportedLengthOfBinaryHash;
-            if (supportedLengthOfBinaryHash == 0 || !picturesIds.Any())
+            if (!picturesIds.Any())
                 return new Dictionary<int, string>();
 
-            const string strCommand = "SELECT [PictureId], HASHBYTES('sha1', substring([BinaryData], 0, {0})) as [Hash] FROM [PictureBinary] where [PictureId] in ({1})";
-            return _dbContext
-                .QueryFromSql<PictureHashItem>(string.Format(strCommand, supportedLengthOfBinaryHash, picturesIds.Select(p => p.ToString()).Aggregate((all, current) => all + ", " + current))).Distinct()
-                .ToDictionary(p => p.PictureId, p => BitConverter.ToString(p.Hash).Replace("-", string.Empty));
+            var hashes = (await _dataProvider.GetTableAsync<PictureBinary>())
+                    .Where(p => picturesIds.Contains(p.PictureId))
+                    .Select(x => new
+                    {
+                        x.PictureId,
+                        Hash = Hash(x.BinaryData, _dataProvider.SupportedLengthOfBinaryHash)
+                    });
+
+            return await AsyncIQueryableExtensions.ToDictionaryAsync(hashes, p => p.PictureId, p => p.Hash);
         }
 
         /// <summary>
@@ -883,109 +1004,106 @@ namespace Nop.Services.Media
         /// <param name="product">Product</param>
         /// <param name="attributesXml">Attributes (in XML format)</param>
         /// <returns>Picture</returns>
-        public virtual Picture GetProductPicture(Product product, string attributesXml)
+        public virtual async Task<Picture> GetProductPictureAsync(Product product, string attributesXml)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
 
             //first, try to get product attribute combination picture
-            var combination = _productAttributeParser.FindProductAttributeCombination(product, attributesXml);
-            var combinationPicture = GetPictureById(combination?.PictureId ?? 0);
+            var combination = await _productAttributeParser.FindProductAttributeCombinationAsync(product, attributesXml);
+            var combinationPicture = await GetPictureByIdAsync(combination?.PictureId ?? 0);
             if (combinationPicture != null)
                 return combinationPicture;
 
             //then, let's see whether we have attribute values with pictures
-            var attributePicture = _productAttributeParser.ParseProductAttributeValues(attributesXml)
-                .Select(attributeValue => GetPictureById(attributeValue?.PictureId ?? 0))
-                .FirstOrDefault(picture => picture != null);
+            var attributePicture = await (await _productAttributeParser.ParseProductAttributeValuesAsync(attributesXml))
+                .SelectAwait(async attributeValue => await GetPictureByIdAsync(attributeValue?.PictureId ?? 0))
+                .FirstOrDefaultAsync(picture => picture != null);
             if (attributePicture != null)
                 return attributePicture;
 
             //now let's load the default product picture
-            var productPicture = GetPicturesByProductId(product.Id, 1).FirstOrDefault();
+            var productPicture = (await GetPicturesByProductIdAsync(product.Id, 1)).FirstOrDefault();
             if (productPicture != null)
                 return productPicture;
 
             //finally, let's check whether this product has some parent "grouped" product
-            if (product.VisibleIndividually || product.ParentGroupedProductId <= 0) 
+            if (product.VisibleIndividually || product.ParentGroupedProductId <= 0)
                 return null;
 
-            var parentGroupedProductPicture = GetPicturesByProductId(product.ParentGroupedProductId, 1).FirstOrDefault();
+            var parentGroupedProductPicture = (await GetPicturesByProductIdAsync(product.ParentGroupedProductId, 1)).FirstOrDefault();
             return parentGroupedProductPicture;
         }
 
-        #endregion
-
-        #region Properties
+        /// <summary>
+        /// Gets a value indicating whether the images should be stored in data base.
+        /// </summary>
+        public virtual async Task<bool> IsStoreInDbAsync()
+        {
+            return await _settingService.GetSettingByKeyAsync("Media.Images.StoreInDB", true);
+        }
 
         /// <summary>
-        /// Gets or sets a value indicating whether the images should be stored in data base.
+        /// Sets a value indicating whether the images should be stored in data base
         /// </summary>
-        public virtual bool StoreInDb
+        /// <param name="isStoreInDb">A value indicating whether the images should be stored in data base</param>
+        public virtual async Task SetIsStoreInDbAsync(bool isStoreInDb)
         {
-            get => _settingService.GetSettingByKey("Media.Images.StoreInDB", true);
-            set
+            //check whether it's a new value
+            if (await IsStoreInDbAsync() == isStoreInDb)
+                return;
+
+            //save the new setting value
+            await _settingService.SetSettingAsync("Media.Images.StoreInDB", isStoreInDb);
+
+            var pageIndex = 0;
+            const int pageSize = 400;
+            try
             {
-                //check whether it's a new value
-                if (StoreInDb == value)
-                    return;
-
-                //save the new setting value
-                _settingService.SetSetting("Media.Images.StoreInDB", value);
-
-                var pageIndex = 0;
-                const int pageSize = 400;
-                try
+                while (true)
                 {
-                    while (true)
+                    var pictures = await GetPicturesAsync(pageIndex: pageIndex, pageSize: pageSize);
+                    pageIndex++;
+
+                    //all pictures converted?
+                    if (!pictures.Any())
+                        break;
+
+                    foreach (var picture in pictures)
                     {
-                        var pictures = GetPictures(pageIndex, pageSize);
-                        pageIndex++;
+                        if (!string.IsNullOrEmpty(picture.VirtualPath))
+                            continue;
 
-                        //all pictures converted?
-                        if (!pictures.Any())
-                            break;
+                        var pictureBinary = await LoadPictureBinaryAsync(picture, !isStoreInDb);
 
-                        foreach (var picture in pictures)
-                        {
-                            var pictureBinary = LoadPictureBinary(picture, !value);
-
-                            //we used the code below before. but it's too slow
-                            //let's do it manually (uncommented code) - copy some logic from "UpdatePicture" method
-                            /*just update a picture (all required logic is in "UpdatePicture" method)
-                            we do not validate picture binary here to ensure that no exception ("Parameter is not valid") will be thrown when "moving" pictures
-                            UpdatePicture(picture.Id,
-                                          pictureBinary,
-                                          picture.MimeType,
-                                          picture.SeoFilename,
-                                          true,
-                                          false);*/
-                            if (value)
-                                //delete from file system. now it's in the database
-                                DeletePictureOnFileSystem(picture);
-                            else
-                                //now on file system
-                                SavePictureInFile(picture.Id, pictureBinary, picture.MimeType);
-                            //update appropriate properties
-                            UpdatePictureBinary(picture, value ? pictureBinary : new byte[0]);
-                            picture.IsNew = true;
-                            //raise event?
-                            //_eventPublisher.EntityUpdated(picture);
-                        }
-
-                        //save all at once
-                        _pictureRepository.Update(pictures);
-                        //detach them in order to release memory
-                        foreach (var picture in pictures)
-                        {
-                            _dbContext.Detach(picture);
-                        }
+                        //we used the code below before. but it's too slow
+                        //let's do it manually (uncommented code) - copy some logic from "UpdatePicture" method
+                        /*just update a picture (all required logic is in "UpdatePicture" method)
+                        we do not validate picture binary here to ensure that no exception ("Parameter is not valid") will be thrown when "moving" pictures
+                        UpdatePicture(picture.Id,
+                                      pictureBinary,
+                                      picture.MimeType,
+                                      picture.SeoFilename,
+                                      true,
+                                      false);*/
+                        if (isStoreInDb)
+                            //delete from file system. now it's in the database
+                            await DeletePictureOnFileSystemAsync(picture);
+                        else
+                            //now on file system
+                            await SavePictureInFileAsync(picture.Id, pictureBinary, picture.MimeType);
+                        //update appropriate properties
+                        await UpdatePictureBinaryAsync(picture, isStoreInDb ? pictureBinary : Array.Empty<byte>());
+                        picture.IsNew = true;
                     }
+
+                    //save all at once
+                    await _pictureRepository.UpdateAsync(pictures, false);
                 }
-                catch
-                {
-                    // ignored
-                }
+            }
+            catch
+            {
+                // ignored
             }
         }
 

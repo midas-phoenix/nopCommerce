@@ -28,11 +28,19 @@ namespace Nop.Web.Areas.Admin.Models.Plugins
         [NopResourceDisplayName("Admin.Configuration.Plugins.Group")]
         public string SearchGroup { get; set; }
 
+        [NopResourceDisplayName("Admin.Configuration.Plugins.FriendlyName")]
+        public string SearchFriendlyName { get; set; }
+
+        [NopResourceDisplayName("Admin.Configuration.Plugins.Author")]
+        public string SearchAuthor { get; set; }
+
         [NopResourceDisplayName("Admin.Configuration.Plugins.LoadMode")]
         public IList<SelectListItem> AvailableLoadModes { get; set; }
 
         [NopResourceDisplayName("Admin.Configuration.Plugins.Group")]
         public IList<SelectListItem> AvailableGroups { get; set; }
+
+        public bool NeedToRestart { get; set; }
 
         #endregion
     }

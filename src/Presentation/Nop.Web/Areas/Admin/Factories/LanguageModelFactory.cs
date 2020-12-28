@@ -1,11 +1,16 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Nop.Core;
 using Nop.Core.Domain.Localization;
+using Nop.Data.Extensions;
+using Nop.Services;
 using Nop.Services.Localization;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Localization;
-using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Factories;
+using Nop.Web.Framework.Models.Extensions;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -15,7 +20,7 @@ namespace Nop.Web.Areas.Admin.Factories
     public partial class LanguageModelFactory : ILanguageModelFactory
     {
         #region Fields
-
+        
         private readonly IBaseAdminModelFactory _baseAdminModelFactory;
         private readonly ILanguageService _languageService;
         private readonly ILocalizationService _localizationService;
@@ -30,10 +35,10 @@ namespace Nop.Web.Areas.Admin.Factories
             ILocalizationService localizationService,
             IStoreMappingSupportedModelFactory storeMappingSupportedModelFactory)
         {
-            this._baseAdminModelFactory = baseAdminModelFactory;
-            this._languageService = languageService;
-            this._localizationService = localizationService;
-            this._storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
+            _baseAdminModelFactory = baseAdminModelFactory;
+            _languageService = languageService;
+            _localizationService = localizationService;
+            _storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
         }
 
         #endregion
@@ -61,7 +66,7 @@ namespace Nop.Web.Areas.Admin.Factories
 
             return searchModel;
         }
-
+        
         #endregion
 
         #region Methods
@@ -71,7 +76,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Language search model</param>
         /// <returns>Language search model</returns>
-        public virtual LanguageSearchModel PrepareLanguageSearchModel(LanguageSearchModel searchModel)
+        public virtual Task<LanguageSearchModel> PrepareLanguageSearchModelAsync(LanguageSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -79,7 +84,7 @@ namespace Nop.Web.Areas.Admin.Factories
             //prepare page parameters
             searchModel.SetGridPageSize();
 
-            return searchModel;
+            return Task.FromResult(searchModel);
         }
 
         /// <summary>
@@ -87,21 +92,19 @@ namespace Nop.Web.Areas.Admin.Factories
         /// </summary>
         /// <param name="searchModel">Language search model</param>
         /// <returns>Language list model</returns>
-        public virtual LanguageListModel PrepareLanguageListModel(LanguageSearchModel searchModel)
+        public virtual async Task<LanguageListModel> PrepareLanguageListModelAsync(LanguageSearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             //get languages
-            var languages = _languageService.GetAllLanguages(showHidden: true, loadCacheableCopy: false);
+            var languages = (await _languageService.GetAllLanguagesAsync(showHidden: true)).ToPagedList(searchModel);
 
             //prepare list model
-            var model = new LanguageListModel
+            var model = new LanguageListModel().PrepareToGrid(searchModel, languages, () =>
             {
-                //fill in model values from the entity
-                Data = languages.PaginationByRequestModel(searchModel).Select(language => language.ToModel<LanguageModel>()),
-                Total = languages.Count
-            };
+                return languages.Select(language => language.ToModel<LanguageModel>());
+            });
 
             return model;
         }
@@ -113,12 +116,12 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="language">Language</param>
         /// <param name="excludeProperties">Whether to exclude populating of some properties of model</param>
         /// <returns>Language model</returns>
-        public virtual LanguageModel PrepareLanguageModel(LanguageModel model, Language language, bool excludeProperties = false)
+        public virtual async Task<LanguageModel> PrepareLanguageModelAsync(LanguageModel model, Language language, bool excludeProperties = false)
         {
             if (language != null)
             {
                 //fill in model values from the entity
-                model = model ?? language.ToModel<LanguageModel>();
+                model ??= language.ToModel<LanguageModel>();
 
                 //prepare nested search model
                 PrepareLocaleResourceSearchModel(model.LocaleResourceSearchModel, language);
@@ -127,16 +130,16 @@ namespace Nop.Web.Areas.Admin.Factories
             //set default values for the new model
             if (language == null)
             {
-                model.DisplayOrder = _languageService.GetAllLanguages().Max(l => l.DisplayOrder) + 1;
+                model.DisplayOrder = (await _languageService.GetAllLanguagesAsync()).Max(l => l.DisplayOrder) + 1;
                 model.Published = true;
             }
 
             //prepare available currencies
-            //TODO: add locale resource for "---"
-            _baseAdminModelFactory.PrepareCurrencies(model.AvailableCurrencies, defaultItemText: "---");
+            await _baseAdminModelFactory.PrepareCurrenciesAsync(model.AvailableCurrencies, 
+                defaultItemText: await _localizationService.GetResourceAsync("Admin.Common.EmptyItemText"));
 
             //prepare available stores
-            _storeMappingSupportedModelFactory.PrepareModelStores(model, language, excludeProperties);
+            await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(model, language, excludeProperties);
 
             return model;
         }
@@ -147,7 +150,7 @@ namespace Nop.Web.Areas.Admin.Factories
         /// <param name="searchModel">Locale resource search model</param>
         /// <param name="language">Language</param>
         /// <returns>Locale resource list model</returns>
-        public virtual LocaleResourceListModel PrepareLocaleResourceListModel(LocaleResourceSearchModel searchModel, Language language)
+        public virtual async Task<LocaleResourceListModel> PrepareLocaleResourceListModelAsync(LocaleResourceSearchModel searchModel, Language language)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
@@ -156,29 +159,29 @@ namespace Nop.Web.Areas.Admin.Factories
                 throw new ArgumentNullException(nameof(language));
 
             //get locale resources
-            var localeResources = _localizationService.GetAllResourceValues(language.Id, loadPublicLocales: null)
+            var localeResources = (await _localizationService.GetAllResourceValuesAsync(language.Id, loadPublicLocales: null))
                 .OrderBy(localeResource => localeResource.Key).AsQueryable();
 
             //filter locale resources
-            //TODO: move filter to language service
             if (!string.IsNullOrEmpty(searchModel.SearchResourceName))
                 localeResources = localeResources.Where(l => l.Key.ToLowerInvariant().Contains(searchModel.SearchResourceName.ToLowerInvariant()));
             if (!string.IsNullOrEmpty(searchModel.SearchResourceValue))
                 localeResources = localeResources.Where(l => l.Value.Value.ToLowerInvariant().Contains(searchModel.SearchResourceValue.ToLowerInvariant()));
 
+            var pagedLocaleResources = await localeResources.ToPagedListAsync(searchModel.Page - 1, searchModel.PageSize);
+
             //prepare list model
-            var model = new LocaleResourceListModel
+            var model = new LocaleResourceListModel().PrepareToGrid(searchModel, pagedLocaleResources, () =>
             {
                 //fill in model values from the entity
-                Data = localeResources.PaginationByRequestModel(searchModel).Select(localeResource => new LocaleResourceModel
+                return pagedLocaleResources.Select(localeResource => new LocaleResourceModel
                 {
                     LanguageId = language.Id,
                     Id = localeResource.Value.Key,
                     ResourceName = localeResource.Key,
                     ResourceValue = localeResource.Value.Value
-                }),
-                Total = localeResources.Count()
-            };
+                });
+            });
 
             return model;
         }

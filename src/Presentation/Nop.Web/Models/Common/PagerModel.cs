@@ -1,4 +1,5 @@
-﻿using Nop.Core.Infrastructure;
+﻿using System.Threading.Tasks;
+using Nop.Core.Infrastructure;
 using Nop.Services.Localization;
 
 namespace Nop.Web.Models.Common
@@ -15,7 +16,7 @@ namespace Nop.Web.Models.Common
 
         public PagerModel(ILocalizationService localizationService)
         {
-            this._localizationService = localizationService;
+            _localizationService = localizationService;
         }
 
         #endregion Constructors
@@ -35,12 +36,6 @@ namespace Nop.Web.Models.Common
         private bool? showPrevious;
         private bool? showTotalSummary;
 
-        private string firstButtonText;
-        private string lastButtonText;
-        private string nextButtonText;
-        private string previousButtonText;
-        private string currentPageText;
-
         #endregion Fields
 
         #region Properties
@@ -48,13 +43,7 @@ namespace Nop.Web.Models.Common
         /// <summary>
         /// Gets the current page index
         /// </summary>
-        public int CurrentPage
-        {
-            get
-            {
-                return (this.PageIndex + 1);
-            }
-        }
+        public int CurrentPage => PageIndex + 1;
 
         /// <summary>
         /// Gets or sets a count of individual pages to be displayed
@@ -65,13 +54,10 @@ namespace Nop.Web.Models.Common
             {
                 if (individualPagesDisplayedCount <= 0)
                     return 5;
-                
+
                 return individualPagesDisplayedCount;
             }
-            set
-            {
-                individualPagesDisplayedCount = value;
-            }
+            set => individualPagesDisplayedCount = value;
         }
 
         /// <summary>
@@ -81,16 +67,13 @@ namespace Nop.Web.Models.Common
         {
             get
             {
-                if (this.pageIndex < 0)
+                if (pageIndex < 0)
                 {
                     return 0;
                 }
-                return this.pageIndex;
+                return pageIndex;
             }
-            set
-            {
-                this.pageIndex = value;
-            }
+            set => pageIndex = value;
         }
 
         /// <summary>
@@ -98,14 +81,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public int PageSize
         {
-            get
-            {
-                return (pageSize <= 0) ? 10 : pageSize;
-            }
-            set
-            {
-                pageSize = value;
-            }
+            get => (pageSize <= 0) ? 10 : pageSize;
+            set => pageSize = value;
         }
 
         /// <summary>
@@ -113,14 +90,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowFirst
         {
-            get
-            {
-                return showFirst ?? true;
-            }
-            set
-            {
-                showFirst = value;
-            }
+            get => showFirst ?? true;
+            set => showFirst = value;
         }
 
         /// <summary>
@@ -128,14 +99,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowIndividualPages
         {
-            get
-            {
-                return showIndividualPages ?? true;
-            }
-            set
-            {
-                showIndividualPages = value;
-            }
+            get => showIndividualPages ?? true;
+            set => showIndividualPages = value;
         }
 
         /// <summary>
@@ -143,14 +108,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowLast
         {
-            get
-            {
-                return showLast ?? true;
-            }
-            set
-            {
-                showLast = value;
-            }
+            get => showLast ?? true;
+            set => showLast = value;
         }
 
         /// <summary>
@@ -158,14 +117,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowNext
         {
-            get
-            {
-                return showNext ?? true;
-            }
-            set
-            {
-                showNext = value;
-            }
+            get => showNext ?? true;
+            set => showNext = value;
         }
 
         /// <summary>
@@ -173,14 +126,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowPagerItems
         {
-            get
-            {
-                return showPagerItems ?? true;
-            }
-            set
-            {
-                showPagerItems = value;
-            }
+            get => showPagerItems ?? true;
+            set => showPagerItems = value;
         }
 
         /// <summary>
@@ -188,14 +135,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowPrevious
         {
-            get
-            {
-                return showPrevious ?? true;
-            }
-            set
-            {
-                showPrevious = value;
-            }
+            get => showPrevious ?? true;
+            set => showPrevious = value;
         }
 
         /// <summary>
@@ -203,14 +144,8 @@ namespace Nop.Web.Models.Common
         /// </summary>
         public bool ShowTotalSummary
         {
-            get
-            {
-                return showTotalSummary ?? false;
-            }
-            set
-            {
-                showTotalSummary = value;
-            }
+            get => showTotalSummary ?? false;
+            set => showTotalSummary = value;
         }
 
         /// <summary>
@@ -220,12 +155,12 @@ namespace Nop.Web.Models.Common
         {
             get
             {
-                if ((this.TotalRecords == 0) || (this.PageSize == 0))
+                if ((TotalRecords == 0) || (PageSize == 0))
                 {
                     return 0;
                 }
-                var num = this.TotalRecords / this.PageSize;
-                if ((this.TotalRecords % this.PageSize) > 0)
+                var num = TotalRecords / PageSize;
+                if ((TotalRecords % PageSize) > 0)
                 {
                     num++;
                 }
@@ -239,88 +174,43 @@ namespace Nop.Web.Models.Common
         public int TotalRecords { get; set; }
 
         /// <summary>
-        /// Gets or sets the first button text
+        /// Gets the first button text
         /// </summary>
-        public string FirstButtonText
+        public async Task<string> GetFirstButtonTextAsync()
         {
-            get
-            {
-                return (!string.IsNullOrEmpty(firstButtonText)) ?
-                    firstButtonText :
-                    _localizationService.GetResource("Pager.First");
-            }
-            set
-            {
-                firstButtonText = value;
-            }
+           return await _localizationService.GetResourceAsync("Pager.First");
         }
 
         /// <summary>
-        /// Gets or sets the last button text
+        /// Gets the last button text
         /// </summary>
-        public string LastButtonText
+        public async Task<string> GetLastButtonTextAsync()
         {
-            get
-            {
-                return (!string.IsNullOrEmpty(lastButtonText)) ?
-                    lastButtonText :
-                    _localizationService.GetResource("Pager.Last");
-            }
-            set
-            {
-                lastButtonText = value;
-            }
+            return await _localizationService.GetResourceAsync("Pager.Last");
         }
 
         /// <summary>
-        /// Gets or sets the next button text
+        /// Gets the next button text
         /// </summary>
-        public string NextButtonText
+        public async Task<string> GetNextButtonTextAsync()
         {
-            get
-            {
-                return (!string.IsNullOrEmpty(nextButtonText)) ?
-                    nextButtonText :
-                    _localizationService.GetResource("Pager.Next");
-            }
-            set
-            {
-                nextButtonText = value;
-            }
+            return await _localizationService.GetResourceAsync("Pager.Next");
         }
 
         /// <summary>
-        /// Gets or sets the previous button text
+        /// Gets the previous button text
         /// </summary>
-        public string PreviousButtonText
+        public async Task<string> GetPreviousButtonTextAsync()
         {
-            get
-            {
-                return (!string.IsNullOrEmpty(previousButtonText)) ?
-                    previousButtonText :
-                    _localizationService.GetResource("Pager.Previous");
-            }
-            set
-            {
-                previousButtonText = value;
-            }
+           return await _localizationService.GetResourceAsync("Pager.Previous");
         }
 
         /// <summary>
         /// Gets or sets the current page text
         /// </summary>
-        public string CurrentPageText
+        public async Task<string> GetCurrentPageTextAsync()
         {
-            get
-            {
-                return (!string.IsNullOrEmpty(currentPageText)) ?
-                    currentPageText :
-                    _localizationService.GetResource("Pager.CurrentPage");
-            }
-            set
-            {
-                currentPageText = value;
-            }
+            return await _localizationService.GetResourceAsync("Pager.CurrentPage");
         }
 
         /// <summary>

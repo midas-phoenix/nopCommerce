@@ -14,20 +14,27 @@
         loading.show();
         $.ajax({
             cache: false,
-            type: 'GET',
+            type: "GET",
             url: $this.data('url'),
-            data: { 'countryId': selectedItem, 'addSelectStateItem': "true" },
-            success: function (data) {
+            data: { 
+              'countryId': selectedItem,
+              'addSelectStateItem': "true" 
+            },
+            success: function (data, textStatus, jqXHR) {
                 stateProvince.html('');
                 $.each(data,
                     function (id, option) {
                         stateProvince.append($('<option></option>').val(option.id).html(option.name));
                     });
-                loading.hide();
             },
-            error: function (xhr, ajaxOptions, thrownError) {
+            error: function (jqXHR, textStatus, errorThrown) {
                 alert('Failed to retrieve states.');
-                loading.hide();
+            },
+            complete: function(jqXHR, textStatus) {
+              var stateId = (typeof Billing !== "undefined") ? Billing.selectedStateId : (typeof CheckoutBilling !== "undefined") ? CheckoutBilling.selectedStateId : 0;
+              $(`#${stateProvince[0].id} option[value=${stateId}]`).prop('selected', true);
+
+              loading.hide();
             }
         });
     }

@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
-using Nop.Services.Security;
 using Nop.Services.Messages;
+using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Models.Logging;
 using Nop.Web.Framework.Mvc;
@@ -32,47 +33,36 @@ namespace Nop.Web.Areas.Admin.Controllers
             INotificationService notificationService,
             IPermissionService permissionService)
         {
-            this._activityLogModelFactory = activityLogModelFactory;
-            this._customerActivityService = customerActivityService;
-            this._localizationService = localizationService;
-            this._notificationService = notificationService;
-            this._permissionService = permissionService;
+            _activityLogModelFactory = activityLogModelFactory;
+            _customerActivityService = customerActivityService;
+            _localizationService = localizationService;
+            _notificationService = notificationService;
+            _permissionService = permissionService;
         }
 
         #endregion
 
         #region Methods
 
-        public virtual  IActionResult List()
+        public virtual async Task<IActionResult> ActivityTypes()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _activityLogModelFactory.PrepareActivityLogContainerModel(new ActivityLogContainerModel());
+            var model = await _activityLogModelFactory.PrepareActivityLogTypeSearchModelAsync(new ActivityLogTypeSearchModel());
 
             return View(model);
         }
 
-        public virtual IActionResult ListTypes()
+        [HttpPost, ActionName("SaveTypes")]
+        public virtual async Task<IActionResult> SaveTypes(IFormCollection form)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
-                return AccessDeniedView();
-
-            //prepare model
-            var model = _activityLogModelFactory.PrepareActivityLogTypeModels();
-
-            return View(model);
-        }
-
-        [HttpPost, ActionName("ListTypes")]
-        public virtual IActionResult SaveTypes(IFormCollection form)
-        {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
                 return AccessDeniedView();
 
             //activity log
-            _customerActivityService.InsertActivity("EditActivityLogTypes", _localizationService.GetResource("ActivityLog.EditActivityLogTypes"));
+            await _customerActivityService.InsertActivityAsync("EditActivityLogTypes", await _localizationService.GetResourceAsync("ActivityLog.EditActivityLogTypes"));
 
             //get identifiers of selected activity types
             var selectedActivityTypesIds = form["checkbox_activity_types"]
@@ -81,73 +71,72 @@ namespace Nop.Web.Areas.Admin.Controllers
                 .Distinct().ToList();
 
             //update activity types
-            var activityTypes = _customerActivityService.GetAllActivityTypes();
+            var activityTypes = await _customerActivityService.GetAllActivityTypesAsync();
             foreach (var activityType in activityTypes)
             {
                 activityType.Enabled = selectedActivityTypesIds.Contains(activityType.Id);
-                _customerActivityService.UpdateActivityType(activityType);
+                await _customerActivityService.UpdateActivityTypeAsync(activityType);
             }
 
-            _notificationService.SuccessNotification(_localizationService.GetResource("Admin.Configuration.ActivityLog.ActivityLogType.Updated"));
+            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Customers.ActivityLogType.Updated"));
 
-            //selected tab
-            SaveSelectedTabName();
-
-            return RedirectToAction("List");
+            return RedirectToAction("ActivityTypes");
         }
 
-        public virtual IActionResult ListLogs()
+        public virtual async Task<IActionResult> ActivityLogs()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _activityLogModelFactory.PrepareActivityLogSearchModel(new ActivityLogSearchModel());
+            var model = await _activityLogModelFactory.PrepareActivityLogSearchModelAsync(new ActivityLogSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult ListLogs(ActivityLogSearchModel searchModel)
+        public virtual async Task<IActionResult> ListLogs(ActivityLogSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _activityLogModelFactory.PrepareActivityLogListModel(searchModel);
+            var model = await _activityLogModelFactory.PrepareActivityLogListModelAsync(searchModel);
 
             return Json(model);
         }
 
-        public virtual IActionResult AcivityLogDelete(int id)
+        [HttpPost]
+        public virtual async Task<IActionResult> ActivityLogDelete(int id)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
                 return AccessDeniedView();
 
             //try to get a log item with the specified id
-            var logItem = _customerActivityService.GetActivityById(id)
+            var logItem = await _customerActivityService.GetActivityByIdAsync(id)
                 ?? throw new ArgumentException("No activity log found with the specified id", nameof(id));
 
-            _customerActivityService.DeleteActivity(logItem);
+            await _customerActivityService.DeleteActivityAsync(logItem);
 
             //activity log
-            _customerActivityService.InsertActivity("DeleteActivityLog",
-                _localizationService.GetResource("ActivityLog.DeleteActivityLog"), logItem);
+            await _customerActivityService.InsertActivityAsync("DeleteActivityLog",
+                await _localizationService.GetResourceAsync("ActivityLog.DeleteActivityLog"), logItem);
 
             return new NullJsonResult();
         }
 
-        public virtual IActionResult ClearAll()
+        [HttpPost]
+        public virtual async Task<IActionResult> ClearAll()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageActivityLog))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageActivityLog))
                 return AccessDeniedView();
 
-            _customerActivityService.ClearAllActivities();
+            await _customerActivityService.ClearAllActivitiesAsync();
 
             //activity log
-            _customerActivityService.InsertActivity("DeleteActivityLog", _localizationService.GetResource("ActivityLog.DeleteActivityLog"));
+            await _customerActivityService.InsertActivityAsync("DeleteActivityLog", await _localizationService.GetResourceAsync("ActivityLog.DeleteActivityLog"));
 
-            return RedirectToAction("List");
+            return RedirectToAction("ActivityLogs");
         }
 
         #endregion

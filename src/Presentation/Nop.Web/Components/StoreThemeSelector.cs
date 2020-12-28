@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Components;
@@ -13,16 +14,16 @@ namespace Nop.Web.Components
         public StoreThemeSelectorViewComponent(ICommonModelFactory commonModelFactory,
             StoreInformationSettings storeInformationSettings)
         {
-            this._commonModelFactory = commonModelFactory;
-            this._storeInformationSettings = storeInformationSettings;
+            _commonModelFactory = commonModelFactory;
+            _storeInformationSettings = storeInformationSettings;
         }
 
-        public IViewComponentResult Invoke()
+        public async Task<IViewComponentResult> InvokeAsync()
         {
             if (!_storeInformationSettings.AllowCustomerToSelectTheme)
                 return Content("");
 
-            var model = _commonModelFactory.PrepareStoreThemeSelectorModel();
+            var model = await _commonModelFactory.PrepareStoreThemeSelectorModelAsync();
             return View(model);
         }
     }

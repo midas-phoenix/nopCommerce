@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Models.Customers;
@@ -19,33 +20,33 @@ namespace Nop.Web.Areas.Admin.Controllers
         public OnlineCustomerController(ICustomerModelFactory customerModelFactory,
             IPermissionService permissionService)
         {
-            this._customerModelFactory = customerModelFactory;
-            this._permissionService = permissionService;
+            _customerModelFactory = customerModelFactory;
+            _permissionService = permissionService;
         }
 
         #endregion
         
         #region Methods
 
-        public virtual IActionResult List()
+        public virtual async Task<IActionResult> List()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _customerModelFactory.PrepareOnlineCustomerSearchModel(new OnlineCustomerSearchModel());
+            var model = await _customerModelFactory.PrepareOnlineCustomerSearchModelAsync(new OnlineCustomerSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult List(OnlineCustomerSearchModel searchModel)
+        public virtual async Task<IActionResult> List(OnlineCustomerSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _customerModelFactory.PrepareOnlineCustomerListModel(searchModel);
+            var model = await _customerModelFactory.PrepareOnlineCustomerListModelAsync(searchModel);
 
             return Json(model);
         }

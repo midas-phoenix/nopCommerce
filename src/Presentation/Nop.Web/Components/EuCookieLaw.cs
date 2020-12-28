@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain;
@@ -21,29 +22,29 @@ namespace Nop.Web.Components
             IWorkContext workContext,
             StoreInformationSettings storeInformationSettings)
         {
-            this._genericAttributeService = genericAttributeService;
-            this._storeContext = storeContext;
-            this._workContext = workContext;
-            this._storeInformationSettings = storeInformationSettings;
+            _genericAttributeService = genericAttributeService;
+            _storeContext = storeContext;
+            _workContext = workContext;
+            _storeInformationSettings = storeInformationSettings;
         }
 
-        public IViewComponentResult Invoke()
+        public async Task<IViewComponentResult> InvokeAsync()
         {
             if (!_storeInformationSettings.DisplayEuCookieLawWarning)
                 //disabled
                 return Content("");
 
             //ignore search engines because some pages could be indexed with the EU cookie as description
-            if (_workContext.CurrentCustomer.IsSearchEngineAccount())
+            if ((await _workContext.GetCurrentCustomerAsync()).IsSearchEngineAccount())
                 return Content("");
 
-            if (_genericAttributeService.GetAttribute<bool>(_workContext.CurrentCustomer, NopCustomerDefaults.EuCookieLawAcceptedAttribute, _storeContext.CurrentStore.Id))
+            if (await _genericAttributeService.GetAttributeAsync<bool>(await _workContext.GetCurrentCustomerAsync(), NopCustomerDefaults.EuCookieLawAcceptedAttribute, (await _storeContext.GetCurrentStoreAsync()).Id))
                 //already accepted
                 return Content("");
 
             //ignore notification?
             //right now it's used during logout so popup window is not displayed twice
-            if (TempData[$"{NopCookieDefaults.Prefix}{NopCookieDefaults.IgnoreEuCookieLawWarning}"] != null && Convert.ToBoolean($"{NopCookieDefaults.Prefix}{NopCookieDefaults.IgnoreEuCookieLawWarning}"))
+            if (TempData[$"{NopCookieDefaults.Prefix}{NopCookieDefaults.IgnoreEuCookieLawWarning}"] != null && Convert.ToBoolean(TempData[$"{NopCookieDefaults.Prefix}{NopCookieDefaults.IgnoreEuCookieLawWarning}"]))
                 return Content("");
 
             return View();

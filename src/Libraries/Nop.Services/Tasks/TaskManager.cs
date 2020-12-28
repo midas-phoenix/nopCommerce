@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Nop.Core.Infrastructure;
+using Nop.Data;
 
 namespace Nop.Services.Tasks
 {
@@ -32,12 +33,15 @@ namespace Nop.Services.Tasks
         /// </summary>
         public void Initialize()
         {
+            if (!DataSettingsManager.IsDatabaseInstalledAsync().Result)
+                return;
+
             _taskThreads.Clear();
 
             var taskService = EngineContext.Current.Resolve<IScheduleTaskService>();
             
             var scheduleTasks = taskService
-                .GetAllTasks()
+                .GetAllTasksAsync().Result
                 .OrderBy(x => x.Seconds)
                 .ToList();
             

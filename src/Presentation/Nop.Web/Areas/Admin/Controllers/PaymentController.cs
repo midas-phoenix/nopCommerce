@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using Nop.Core.Domain.Payments;
-using Nop.Core.Plugins;
+using Nop.Core.Events;
 using Nop.Services.Configuration;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
@@ -15,7 +17,6 @@ using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Models.Payments;
 using Nop.Web.Framework.Mvc;
-using Nop.Web.Framework.Mvc.Filters;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -24,12 +25,12 @@ namespace Nop.Web.Areas.Admin.Controllers
         #region Fields
 
         private readonly ICountryService _countryService;
+        private readonly IEventPublisher _eventPublisher;
         private readonly ILocalizationService _localizationService;
         private readonly INotificationService _notificationService;
         private readonly IPaymentModelFactory _paymentModelFactory;
-        private readonly IPaymentService _paymentService;
+        private readonly IPaymentPluginManager _paymentPluginManager;
         private readonly IPermissionService _permissionService;
-        private readonly IPluginFinder _pluginFinder;
         private readonly ISettingService _settingService;
         private readonly PaymentSettings _paymentSettings;
 
@@ -38,67 +39,72 @@ namespace Nop.Web.Areas.Admin.Controllers
         #region Ctor
 
         public PaymentController(ICountryService countryService,
+            IEventPublisher eventPublisher,
             ILocalizationService localizationService,
             INotificationService notificationService,
             IPaymentModelFactory paymentModelFactory,
-            IPaymentService paymentService,
+            IPaymentPluginManager paymentPluginManager,
             IPermissionService permissionService,
-            IPluginFinder pluginFinder,
             ISettingService settingService,
             PaymentSettings paymentSettings)
         {
-            this._countryService = countryService;
-            this._localizationService = localizationService;
-            this._notificationService = notificationService;
-            this._paymentModelFactory = paymentModelFactory;
-            this._paymentService = paymentService;
-            this._permissionService = permissionService;
-            this._pluginFinder = pluginFinder;
-            this._settingService = settingService;
-            this._paymentSettings = paymentSettings;
+            _countryService = countryService;
+            _eventPublisher = eventPublisher;
+            _localizationService = localizationService;
+            _notificationService = notificationService;
+            _paymentModelFactory = paymentModelFactory;
+            _paymentPluginManager = paymentPluginManager;
+            _permissionService = permissionService;
+            _settingService = settingService;
+            _paymentSettings = paymentSettings;
         }
 
         #endregion
 
-        #region Methods        
+        #region Methods  
 
         public virtual IActionResult PaymentMethods()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
+            return RedirectToAction("Methods");
+        }
+
+        public virtual async Task<IActionResult> Methods()
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _paymentModelFactory.PreparePaymentMethodsModel(new PaymentMethodsModel());
+            var model = await _paymentModelFactory.PreparePaymentMethodsModelAsync(new PaymentMethodsModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult Methods(PaymentMethodSearchModel searchModel)
+        public virtual async Task<IActionResult> Methods(PaymentMethodSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _paymentModelFactory.PreparePaymentMethodListModel(searchModel);
+            var model = await _paymentModelFactory.PreparePaymentMethodListModelAsync(searchModel);
 
             return Json(model);
         }
 
         [HttpPost]
-        public virtual IActionResult MethodUpdate(PaymentMethodModel model)
+        public virtual async Task<IActionResult> MethodUpdate(PaymentMethodModel model)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
                 return AccessDeniedView();
 
-            var pm = _paymentService.LoadPaymentMethodBySystemName(model.SystemName);
-            if (_paymentService.IsPaymentMethodActive(pm))
+            var pm = await _paymentPluginManager.LoadPluginBySystemNameAsync(model.SystemName);
+            if (_paymentPluginManager.IsPluginActive(pm))
             {
                 if (!model.IsActive)
                 {
                     //mark as disabled
                     _paymentSettings.ActivePaymentMethodSystemNames.Remove(pm.PluginDescriptor.SystemName);
-                    _settingService.SaveSetting(_paymentSettings);
+                    await _settingService.SaveSettingAsync(_paymentSettings);
                 }
             }
             else
@@ -107,7 +113,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 {
                     //mark as active
                     _paymentSettings.ActivePaymentMethodSystemNames.Add(pm.PluginDescriptor.SystemName);
-                    _settingService.SaveSetting(_paymentSettings);
+                    await _settingService.SaveSettingAsync(_paymentSettings);
                 }
             }
 
@@ -116,43 +122,43 @@ namespace Nop.Web.Areas.Admin.Controllers
             pluginDescriptor.DisplayOrder = model.DisplayOrder;
 
             //update the description file
-            PluginManager.SavePluginDescriptor(pluginDescriptor);
+            pluginDescriptor.Save();
 
-            //reset plugin cache
-            _pluginFinder.ReloadPlugins(pluginDescriptor);
+            //raise event
+            await _eventPublisher.PublishAsync(new PluginUpdatedEvent(pluginDescriptor));
 
             return new NullJsonResult();
         }
 
-        public virtual IActionResult MethodRestrictions()
+        public virtual async Task<IActionResult> MethodRestrictions()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _paymentModelFactory.PreparePaymentMethodRestrictionModel(new PaymentMethodRestrictionModel());
+            var model = await _paymentModelFactory.PreparePaymentMethodsModelAsync(new PaymentMethodsModel());
 
             return View(model);
         }
 
         //we ignore this filter for increase RequestFormLimits
-        [AdminAntiForgery(true)]
+        [IgnoreAntiforgeryToken]
         //we use 2048 value because in some cases default value (1024) is too small for this action
         [RequestFormLimits(ValueCountLimit = 2048)]
         [HttpPost, ActionName("MethodRestrictions")]
-        public virtual IActionResult MethodRestrictionsSave(PaymentMethodsModel model)
+        public virtual async Task<IActionResult> MethodRestrictionsSave(PaymentMethodsModel model, IFormCollection form)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
                 return AccessDeniedView();
 
-            var paymentMethods = _paymentService.LoadAllPaymentMethods();
-            var countries = _countryService.GetAllCountries(showHidden: true);
+            var paymentMethods = await _paymentPluginManager.LoadAllPluginsAsync();
+            var countries = await _countryService.GetAllCountriesAsync(showHidden: true);
 
             foreach (var pm in paymentMethods)
             {
                 var formKey = "restrict_" + pm.PluginDescriptor.SystemName;
-                var countryIdsToRestrict = (!StringValues.IsNullOrEmpty(model.Form[formKey])
-                        ? model.Form[formKey].ToString().Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).ToList()
+                var countryIdsToRestrict = (!StringValues.IsNullOrEmpty(form[formKey])
+                        ? form[formKey].ToString().Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).ToList()
                         : new List<string>())
                     .Select(x => Convert.ToInt32(x)).ToList();
 
@@ -165,15 +171,12 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
 
-                _paymentService.SaveRestictedCountryIds(pm, newCountryIds);
+                await _paymentPluginManager.SaveRestrictedCountriesAsync(pm, newCountryIds);
             }
 
-            _notificationService.SuccessNotification(_localizationService.GetResource("Admin.Configuration.Payment.MethodRestrictions.Updated"));
-
-            //selected tab
-            SaveSelectedTabName();
-
-            return RedirectToAction("PaymentMethods");
+            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Configuration.Payment.MethodRestrictions.Updated"));
+            
+            return RedirectToAction("MethodRestrictions");
         }
 
         #endregion

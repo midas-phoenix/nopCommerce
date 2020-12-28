@@ -1,25 +1,25 @@
 ﻿@model LanguageModel
 
-@inject IEventPublisher eventPublisher
+@{
+    const string hideInfoBlockAttributeName = "LanguagePage.HideInfoBlock";
+    var hideInfoBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideInfoBlockAttributeName);
+
+    const string hideResourcesBlockAttributeName = "LanguagePage.HideResourcesBlock";
+    var hideResourcesBlock = await genericAttributeService.GetAttributeAsync<bool>(await workContext.GetCurrentCustomerAsync(), hideResourcesBlockAttributeName, defaultValue: true);
+}
 
 <div asp-validation-summary="All"></div>
 <input asp-for="Id" type="hidden" />
 
-<div class="content">
-    <div class="form-horizontal">
-        <nop-tabs id="language-edit">
-            <nop-tab asp-name="tab-info" asp-title="@T("Admin.Configuration.Languages.Info")" asp-default="true">@await Html.PartialAsync("_CreateOrUpdate.Info", Model)</nop-tab>
-            <nop-tab asp-name="tab-resources" asp-title="@T("Admin.Configuration.Languages.Resources")">@await Html.PartialAsync("_CreateOrUpdate.Resources", Model)</nop-tab>
-        </nop-tabs>
-    </div>
-</div>
+<section class="content">
+    <div class="container-fluid">
+        <div class="form-horizontal">
+            <nop-cards id="language-cards">
+                <nop-card asp-name="language-info" asp-icon="fa fa-info" asp-title="@T("Admin.Configuration.Languages.Info")" asp-hide-block-attribute-name="@hideInfoBlockAttributeName" asp-hide="@hideInfoBlock" asp-advanced="false">@await Html.PartialAsync("_CreateOrUpdate.Info", Model)</nop-card>
+                <nop-card asp-name="language-resources" asp-icon="fa fa-database" asp-title="@T("Admin.Configuration.Languages.Resources")" asp-hide-block-attribute-name="@hideResourcesBlockAttributeName" asp-hide="@hideResourcesBlock" asp-advanced="false">@await Html.PartialAsync("_CreateOrUpdate.Resources", Model)</nop-card>
 
-@{
-    //custom tabs
-    var eventMessage = new AdminTabStripCreated(this.Html, "language-edit");
-    eventPublisher.Publish(eventMessage);
-    foreach (var eventBlock in eventMessage.BlocksToRender)
-    {
-        @eventBlock
-    }
-}
+                @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.LanguageDetailsBlock, additionalData = Model })
+            </nop-cards>
+        </div>
+    </div>
+</section>

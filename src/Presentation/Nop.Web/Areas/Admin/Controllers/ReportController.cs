@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Models.Reports;
@@ -20,8 +21,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             IPermissionService permissionService,
             IReportModelFactory reportModelFactory)
         {
-            this._permissionService = permissionService;
-            this._reportModelFactory = reportModelFactory;
+            _permissionService = permissionService;
+            _reportModelFactory = reportModelFactory;
         }
 
         #endregion
@@ -30,25 +31,25 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Low stock
 
-        public virtual IActionResult LowStock()
+        public virtual async Task<IActionResult> LowStock()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageProducts))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _reportModelFactory.PrepareLowStockProductSearchModel(new LowStockProductSearchModel());
+            var model = await _reportModelFactory.PrepareLowStockProductSearchModelAsync(new LowStockProductSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult LowStockList(LowStockProductSearchModel searchModel)
+        public virtual async Task<IActionResult> LowStockList(LowStockProductSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageProducts))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareLowStockProductListModel(searchModel);
+            var model = await _reportModelFactory.PrepareLowStockProductListModelAsync(searchModel);
 
             return Json(model);
         }
@@ -57,52 +58,64 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Bestsellers
 
-        public virtual IActionResult Bestsellers()
+        public virtual async Task<IActionResult> Bestsellers()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageOrders))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _reportModelFactory.PrepareBestsellerSearchModel(new BestsellerSearchModel());
+            var model = await _reportModelFactory.PrepareBestsellerSearchModelAsync(new BestsellerSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult BestsellersList(BestsellerSearchModel searchModel)
+        public virtual async Task<IActionResult> BestsellersList(BestsellerSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageOrders))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareBestsellerListModel(searchModel);
+            var model = await _reportModelFactory.PrepareBestsellerListModelAsync(searchModel);
 
             return Json(model);
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> BestsellersReportAggregates(BestsellerSearchModel searchModel)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+                return await AccessDeniedDataTablesJson();
+
+            //prepare model
+            var totalAmount = await _reportModelFactory.GetBestsellerTotalAmountAsync(searchModel);
+
+            return Json(new { aggregatortotal = totalAmount });
         }
 
         #endregion
 
         #region Never Sold
 
-        public virtual IActionResult NeverSold()
+        public virtual async Task<IActionResult> NeverSold()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageOrders))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _reportModelFactory.PrepareNeverSoldSearchModel(new NeverSoldReportSearchModel());
+            var model = await _reportModelFactory.PrepareNeverSoldSearchModelAsync(new NeverSoldReportSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult NeverSoldList(NeverSoldReportSearchModel searchModel)
+        public virtual async Task<IActionResult> NeverSoldList(NeverSoldReportSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageOrders))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareNeverSoldListModel(searchModel);
+            var model = await _reportModelFactory.PrepareNeverSoldListModelAsync(searchModel);
 
             return Json(model);
         }
@@ -111,25 +124,25 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Country sales
 
-        public virtual IActionResult CountrySales()
+        public virtual async Task<IActionResult> CountrySales()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.OrderCountryReport))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.OrderCountryReport))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _reportModelFactory.PrepareCountrySalesSearchModel(new CountryReportSearchModel());
+            var model = await _reportModelFactory.PrepareCountrySalesSearchModelAsync(new CountryReportSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult CountrySalesList(CountryReportSearchModel searchModel)
+        public virtual async Task<IActionResult> CountrySalesList(CountryReportSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.OrderCountryReport))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.OrderCountryReport))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareCountrySalesListModel(searchModel);
+            var model = await _reportModelFactory.PrepareCountrySalesListModelAsync(searchModel);
 
             return Json(model);
         }
@@ -138,49 +151,71 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Customer reports
 
-        public virtual IActionResult Customers()
+        public virtual async Task<IActionResult> RegisteredCustomers()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _reportModelFactory.PrepareCustomerReportsSearchModel(new CustomerReportsSearchModel());
+            var model = await _reportModelFactory.PrepareCustomerReportsSearchModelAsync(new CustomerReportsSearchModel());
+
+            return View(model);
+        }
+
+        public virtual async Task<IActionResult> BestCustomersByOrderTotal()
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return AccessDeniedView();
+
+            //prepare model
+            var model = await _reportModelFactory.PrepareCustomerReportsSearchModelAsync(new CustomerReportsSearchModel());
+
+            return View(model);
+        }
+
+        public virtual async Task<IActionResult> BestCustomersByNumberOfOrders()
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return AccessDeniedView();
+
+            //prepare model
+            var model = await _reportModelFactory.PrepareCustomerReportsSearchModelAsync(new CustomerReportsSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult ReportBestCustomersByOrderTotalList(BestCustomersReportSearchModel searchModel)
+        public virtual async Task<IActionResult> ReportBestCustomersByOrderTotalList(BestCustomersReportSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareBestCustomersReportListModel(searchModel);
+            var model = await _reportModelFactory.PrepareBestCustomersReportListModelAsync(searchModel);
 
             return Json(model);
         }
 
         [HttpPost]
-        public virtual IActionResult ReportBestCustomersByNumberOfOrdersList(BestCustomersReportSearchModel searchModel)
+        public virtual async Task<IActionResult> ReportBestCustomersByNumberOfOrdersList(BestCustomersReportSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareBestCustomersReportListModel(searchModel);
+            var model = await _reportModelFactory.PrepareBestCustomersReportListModelAsync(searchModel);
 
             return Json(model);
         }
 
         [HttpPost]
-        public virtual IActionResult ReportRegisteredCustomersList(RegisteredCustomersReportSearchModel searchModel)
+        public virtual async Task<IActionResult> ReportRegisteredCustomersList(RegisteredCustomersReportSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageCustomers))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _reportModelFactory.PrepareRegisteredCustomersReportListModel(searchModel);
+            var model = await _reportModelFactory.PrepareRegisteredCustomersReportListModelAsync(searchModel);
 
             return Json(model);
         }        

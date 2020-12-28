@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.Tax;
 using Nop.Services.Configuration;
@@ -7,8 +8,8 @@ using Nop.Services.Tax;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Tax;
-using Nop.Web.Framework.Kendoui;
 using Nop.Web.Framework.Mvc;
+using Nop.Web.Framework.Mvc.ModelBinding;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -20,7 +21,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly ISettingService _settingService;
         private readonly ITaxCategoryService _taxCategoryService;
         private readonly ITaxModelFactory _taxModelFactory;
-        private readonly ITaxService _taxService;
+        private readonly ITaxPluginManager _taxPluginManager;
         private readonly TaxSettings _taxSettings;
 
         #endregion
@@ -31,145 +32,139 @@ namespace Nop.Web.Areas.Admin.Controllers
             ISettingService settingService,
             ITaxCategoryService taxCategoryService,
             ITaxModelFactory taxModelFactory,
-            ITaxService taxService,
+            ITaxPluginManager taxPluginManager,
             TaxSettings taxSettings)
         {
-            this._permissionService = permissionService;
-            this._settingService = settingService;
-            this._taxCategoryService = taxCategoryService;
-            this._taxModelFactory = taxModelFactory;
-            this._taxService = taxService;
-            this._taxSettings = taxSettings;
+            _permissionService = permissionService;
+            _settingService = settingService;
+            _taxCategoryService = taxCategoryService;
+            _taxModelFactory = taxModelFactory;
+            _taxPluginManager = taxPluginManager;
+            _taxSettings = taxSettings;
         }
 
         #endregion
 
         #region Methods
 
-        public virtual IActionResult List()
-        {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
-                return AccessDeniedView();
-
-            //prepare model
-            var model = _taxModelFactory.PrepareTaxConfigurationModel(new TaxConfigurationModel());
-
-            return View(model);
-        }
-
         #region Tax Providers
 
-        public virtual IActionResult Providers()
+        public virtual IActionResult List()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            return RedirectToAction("Providers");
+        }
+
+        public virtual async Task<IActionResult> Providers()
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _taxModelFactory.PrepareTaxProviderSearchModel(new TaxProviderSearchModel());
+            var model = await _taxModelFactory.PrepareTaxProviderSearchModelAsync(new TaxProviderSearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult Providers(TaxProviderSearchModel searchModel)
+        public virtual async Task<IActionResult> Providers(TaxProviderSearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _taxModelFactory.PrepareTaxProviderListModel(searchModel);
+            var model = await _taxModelFactory.PrepareTaxProviderListModelAsync(searchModel);
 
             return Json(model);
         }
 
-        public virtual IActionResult MarkAsPrimaryProvider(string systemName)
+        public virtual async Task<IActionResult> MarkAsPrimaryProvider(string systemName)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             if (string.IsNullOrEmpty(systemName))
-                return RedirectToAction("List");
+                return RedirectToAction("Providers");
 
-            var taxProvider = _taxService.LoadTaxProviderBySystemName(systemName);
+            var taxProvider = await _taxPluginManager.LoadPluginBySystemNameAsync(systemName);
             if (taxProvider == null)
-                return RedirectToAction("List");
+                return RedirectToAction("Providers");
 
             _taxSettings.ActiveTaxProviderSystemName = systemName;
-            _settingService.SaveSetting(_taxSettings);
+            await _settingService.SaveSettingAsync(_taxSettings);
 
-            return RedirectToAction("List");
+            return RedirectToAction("Providers");
         }
 
         #endregion
 
         #region Tax Categories
 
-        public virtual IActionResult Categories()
+        public virtual async Task<IActionResult> Categories()
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             //prepare model
-            var model = _taxModelFactory.PrepareTaxCategorySearchModel(new TaxCategorySearchModel());
+            var model = await _taxModelFactory.PrepareTaxCategorySearchModelAsync(new TaxCategorySearchModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult Categories(TaxCategorySearchModel searchModel)
+        public virtual async Task<IActionResult> Categories(TaxCategorySearchModel searchModel)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
-                return AccessDeniedKendoGridJson();
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
+                return await AccessDeniedDataTablesJson();
 
             //prepare model
-            var model = _taxModelFactory.PrepareTaxCategoryListModel(searchModel);
+            var model = await _taxModelFactory.PrepareTaxCategoryListModelAsync(searchModel);
 
             return Json(model);
         }
 
         [HttpPost]
-        public virtual IActionResult CategoryUpdate(TaxCategoryModel model)
+        public virtual async Task<IActionResult> CategoryUpdate(TaxCategoryModel model)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             if (!ModelState.IsValid)
-                return Json(new DataSourceResult { Errors = ModelState.SerializeErrors() });
+                return ErrorJson(ModelState.SerializeErrors());
 
-            var taxCategory = _taxCategoryService.GetTaxCategoryById(model.Id);
+            var taxCategory = await _taxCategoryService.GetTaxCategoryByIdAsync(model.Id);
             taxCategory = model.ToEntity(taxCategory);
-            _taxCategoryService.UpdateTaxCategory(taxCategory);
+            await _taxCategoryService.UpdateTaxCategoryAsync(taxCategory);
 
             return new NullJsonResult();
         }
 
         [HttpPost]
-        public virtual IActionResult CategoryAdd(TaxCategoryModel model)
+        public virtual async Task<IActionResult> CategoryAdd(TaxCategoryModel model)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             if (!ModelState.IsValid)
-                return Json(new DataSourceResult { Errors = ModelState.SerializeErrors() });
+                return ErrorJson(ModelState.SerializeErrors());
 
             var taxCategory = new TaxCategory();
             taxCategory = model.ToEntity(taxCategory);
-            _taxCategoryService.InsertTaxCategory(taxCategory);
+            await _taxCategoryService.InsertTaxCategoryAsync(taxCategory);
 
-            return new NullJsonResult();
+            return Json(new { Result = true });
         }
 
         [HttpPost]
-        public virtual IActionResult CategoryDelete(int id)
+        public virtual async Task<IActionResult> CategoryDelete(int id)
         {
-            if (!_permissionService.Authorize(StandardPermissionProvider.ManageTaxSettings))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageTaxSettings))
                 return AccessDeniedView();
 
             //try to get a tax category with the specified id
-            var taxCategory = _taxCategoryService.GetTaxCategoryById(id)
+            var taxCategory = await _taxCategoryService.GetTaxCategoryByIdAsync(id)
                 ?? throw new ArgumentException("No tax category found with the specified id", nameof(id));
 
-            _taxCategoryService.DeleteTaxCategory(taxCategory);
+            await _taxCategoryService.DeleteTaxCategoryAsync(taxCategory);
 
             return new NullJsonResult();
         }

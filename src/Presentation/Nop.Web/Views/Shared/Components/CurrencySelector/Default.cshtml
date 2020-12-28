@@ -1,19 +1,18 @@
 ﻿@model CurrencySelectorModel
-@using Microsoft.AspNetCore.Http
-@using System.Net
-@using Nop.Core
-@inject IWebHelper webHelper
-@inject IHttpContextAccessor httpContextAccessor
+
+@inject Nop.Core.IWebHelper webHelper
+
 @if (Model.AvailableCurrencies.Count > 1)
 {
     <div class="currency-selector">
         @{
-            var currencies = Model.AvailableCurrencies.Select(x => new SelectListItem
+            var returnUrl = webHelper.GetRawUrl(Context.Request);
+            var currencies = await Model.AvailableCurrencies.SelectAwait(async x => new SelectListItem
             {
                 Text = x.Name,
-                Value = webHelper.ModifyQueryString(Url.RouteUrl("ChangeCurrency", new { customercurrency = x.Id }, webHelper.CurrentRequestProtocol), "returnurl", webHelper.GetRawUrl(httpContextAccessor.HttpContext.Request)),
+                Value = Url.RouteUrl("ChangeCurrency", new { customercurrency = x.Id, returnUrl }, webHelper.GetCurrentRequestProtocol()),
                 Selected = x.Id.Equals(Model.CurrentCurrencyId)
-            });
+            }).ToListAsync();
             <select id="customerCurrency" name="customerCurrency" asp-items="@currencies" onchange="setLocation(this.value);" aria-label="@T("Currency.Selector.Label")"></select>
         }
     </div>

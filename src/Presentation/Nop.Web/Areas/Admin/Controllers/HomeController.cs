@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.Common;
 using Nop.Services.Configuration;
@@ -35,42 +36,46 @@ namespace Nop.Web.Areas.Admin.Controllers
             IPermissionService permissionService,
             ISettingService settingService)
         {
-            this._adminAreaSettings = adminAreaSettings;
-            this._commonModelFactory = commonModelFactory;
-            this._homeModelFactory = homeModelFactory;
-            this._localizationService = localizationService;
-            this._notificationService = notificationService;
-            this._permissionService = permissionService;
-            this._settingService = settingService;
+            _adminAreaSettings = adminAreaSettings;
+            _commonModelFactory = commonModelFactory;
+            _homeModelFactory = homeModelFactory;
+            _localizationService = localizationService;
+            _notificationService = notificationService;
+            _permissionService = permissionService;
+            _settingService = settingService;
         }
 
         #endregion
 
         #region Methods
 
-        public virtual IActionResult Index()
+        public virtual async Task<IActionResult> Index()
         {
             //display a warning to a store owner if there are some error
-            if (_permissionService.Authorize(StandardPermissionProvider.ManageMaintenance))
+            if (await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageMaintenance))
             {
-                var warnings = _commonModelFactory.PrepareSystemWarningModels();
+                var warnings = await _commonModelFactory.PrepareSystemWarningModelsAsync();
                 if (warnings.Any(warning => warning.Level == SystemWarningLevel.Fail ||
                                             warning.Level == SystemWarningLevel.CopyrightRemovalKey ||
                                             warning.Level == SystemWarningLevel.Warning))
-                    _notificationService.WarningNotification(_localizationService.GetResource("Admin.System.Warnings.Errors"));
+                    _notificationService.WarningNotification(
+                        string.Format(await _localizationService.GetResourceAsync("Admin.System.Warnings.Errors"),
+                        Url.Action("Warnings", "Common")),
+                        //do not encode URLs
+                        false);
             }
 
             //prepare model
-            var model = _homeModelFactory.PrepareDashboardModel(new DashboardModel());
+            var model = await _homeModelFactory.PrepareDashboardModelAsync(new DashboardModel());
 
             return View(model);
         }
 
         [HttpPost]
-        public virtual IActionResult NopCommerceNewsHideAdv()
+        public virtual async Task<IActionResult> NopCommerceNewsHideAdv()
         {
             _adminAreaSettings.HideAdvertisementsOnAdminArea = !_adminAreaSettings.HideAdvertisementsOnAdminArea;
-            _settingService.SaveSetting(_adminAreaSettings);
+            await _settingService.SaveSettingAsync(_adminAreaSettings);
 
             return Content("Setting changed");
         }
