@@ -709,7 +709,7 @@ namespace Nop.Services.ExportImport
             };
 
             await using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+            await using var xmlWriter = XmlWriter.Create(stringWriter, settings);
 
             await xmlWriter.WriteStartDocumentAsync();
             await xmlWriter.WriteStartElementAsync("Manufacturers");
@@ -811,7 +811,7 @@ namespace Nop.Services.ExportImport
             };
 
             await using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+            await using var xmlWriter = XmlWriter.Create(stringWriter, settings);
 
             await xmlWriter.WriteStartDocumentAsync();
             await xmlWriter.WriteStartElementAsync("Categories");
@@ -881,7 +881,7 @@ namespace Nop.Services.ExportImport
             };
 
             await using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+            await using var xmlWriter = XmlWriter.Create(stringWriter, settings);
 
             await xmlWriter.WriteStartDocumentAsync();
             await xmlWriter.WriteStartElementAsync("Products");
@@ -1398,7 +1398,7 @@ namespace Nop.Services.ExportImport
             };
 
             await using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+            await using var xmlWriter = XmlWriter.Create(stringWriter, settings);
 
             await xmlWriter.WriteStartDocumentAsync();
             await xmlWriter.WriteStartElementAsync("Orders");
@@ -1662,7 +1662,7 @@ namespace Nop.Services.ExportImport
             };
 
             await using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+            await using var xmlWriter = XmlWriter.Create(stringWriter, settings);
 
             await xmlWriter.WriteStartDocumentAsync();
             await xmlWriter.WriteStartElementAsync("Customers");
@@ -1750,7 +1750,7 @@ namespace Nop.Services.ExportImport
             if (subscriptions == null)
                 throw new ArgumentNullException(nameof(subscriptions));
 
-            const string separator = ",";
+            const char separator = ',';
             var sb = new StringBuilder();
 
             sb.Append(await _localizationService.GetResourceAsync("Admin.Promotions.NewsLetterSubscriptions.Fields.Email"));
@@ -1783,7 +1783,7 @@ namespace Nop.Services.ExportImport
             if (states == null)
                 throw new ArgumentNullException(nameof(states));
 
-            const string separator = ",";
+            const char separator = ',';
             var sb = new StringBuilder();
             foreach (var state in states)
             {
